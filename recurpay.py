@@ -7,23 +7,32 @@ from rich.table import Table
 console = Console()
 
 def get_access_token():
-    url = f"{NOMBA_BASE_URL}/auth/token/issue"
-    headers = {
-        "Content-Type": "application/json",
-        "accountId": NOMBA_ACCOUNT_ID
-    }
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": NOMBA_CLIENT_ID,
-        "client_secret": NOMBA_CLIENT_SECRET
-    }
-    response = requests.post(url, json=payload, headers=headers)
-    data = response.json()
-    if "access_token" in data:
-        console.print("[green]Nomba authentication successful.[/green]")
-        return data["access_token"]
-    else:
-        console.print(f"[red]Auth failed: {data}[/red]")
+    import subprocess
+    import json
+
+    cmd = [
+        "curl", "--request", "POST",
+        "--url", f"{NOMBA_BASE_URL}/auth/token/issue",
+        "--header", "Content-Type: application/json",
+        "--header", f"accountId: {NOMBA_ACCOUNT_ID}",
+        "--data", json.dumps({
+            "grant_type": "client_credentials",
+            "client_id": NOMBA_CLIENT_ID,
+            "client_secret": NOMBA_CLIENT_SECRET
+        })
+    ]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        data = json.loads(result.stdout)
+        if data.get("code") == "00":
+            console.print("[green]Nomba authentication successful.[/green]")
+            return data["data"]["access_token"]
+        else:
+            console.print(f"[red]Auth failed: {data}[/red]")
+            return None
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
         return None
 
 customers = []
