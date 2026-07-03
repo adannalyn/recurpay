@@ -1,0 +1,23 @@
+{
+    "customers": [
+        {
+            "customer_id": "fdccc203-a743-409e-a290-d5418b975a4d",
+            "name": "Gahd",
+            "email": "ezeadannalyn@gmail.com"
+        }
+    ],
+    "subscriptions": [
+        {
+            "subscription_id": "0756e8a1-46d5-4baa-b6d7-4468ee821c63",
+            "customer_id": "fdccc203-a743-409e-a290-d5418b975a4d",
+            "amount": "5000.0",
+            "frequency": "weekly",
+            "start_date": "2027-01-01T00:00:00",
+            "description": "school fees",
+            "next_due_date": "2027-01-08T00:00:00",
+            "status": "pending",
+            "last_payment_date": null,
+            "checkout_link": null
+        }
+    ]
+}
