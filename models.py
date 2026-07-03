@@ -14,8 +14,8 @@ class Customer:
             "email": self.email
         }
 
-@classmethod
-def from_dict(cls, data):
+    @classmethod
+    def from_dict(cls, data):
         return cls(data["name"], data["email"], data["customer_id"])
 
 class Subscription:
