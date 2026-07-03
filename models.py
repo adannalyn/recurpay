@@ -59,8 +59,8 @@ class Subscription:
             "checkout_link": self.checkout_link
         }
 
-@classmethod
-def from_dict(cls, data):
+    @classmethod
+    def from_dict(cls, data):
         start_date = datetime.fromisoformat(data["start_date"])
         next_due_date = datetime.fromisoformat(data["next_due_date"])
         last_payment_date = datetime.fromisoformat(data["last_payment_date"]) if data["last_payment_date"] else None
