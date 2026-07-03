@@ -1,7 +1,12 @@
 import requests
-import json
+import hashlib
 from datetime import datetime, timedelta
 from config import NOMBA_ACCOUNT_ID, NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, NOMBA_BASE_URL, DEBUG
+
+try:
+    from config import NOMBA_SUB_ACCOUNT_ID
+except ImportError:
+    NOMBA_SUB_ACCOUNT_ID = None
 
 class NombaAPI:
     def __init__(self):
@@ -9,6 +14,7 @@ class NombaAPI:
         self.client_id = NOMBA_CLIENT_ID
         self.client_secret = NOMBA_CLIENT_SECRET
         self.base_url = NOMBA_BASE_URL
+        self.sub_account_id = NOMBA_SUB_ACCOUNT_ID
         self.access_token = None
         self.token_expiry = None
         self.mock_mode = False
@@ -96,6 +102,88 @@ class NombaAPI:
             print(f"[NombaAPI Error] Network or API error during checkout link generation for {order_reference}: {e}")
             self.mock_mode = True
             return f"https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}"
+
+    def create_virtual_account_for_sub_account(self, account_ref, account_name, expected_amount=None, expiry_date=None, bvn=None):
+        account_name = self._format_account_name(account_name)
+
+        if not self.sub_account_id:
+            print("[NombaAPI Warning] No sub-account ID configured. Generating mock virtual account.")
+            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
+
+        if self.mock_mode:
+            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock virtual account.")
+            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
+
+        token = self._get_access_token()
+        if not token:
+            self.mock_mode = True
+            print("[NombaAPI Warning] Could not get access token. Falling back to mock virtual account.")
+            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
+
+        virtual_account_url = f"{self.base_url}/accounts/virtual/{self.sub_account_id}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "accountId": self.account_id
+        }
+        payload = {
+            "accountRef": account_ref,
+            "accountName": account_name
+        }
+
+        if bvn:
+            payload["bvn"] = bvn
+        if expected_amount is not None:
+            payload["expectedAmount"] = f"{float(expected_amount):.2f}"
+        if expiry_date:
+            payload["expiryDate"] = self._format_expiry_date(expiry_date)
+
+        try:
+            response = requests.post(virtual_account_url, headers=headers, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") == "00" and isinstance(data.get("data"), dict):
+                if DEBUG: print(f"[NombaAPI] Successfully created virtual account for {account_ref}.")
+                return data["data"]
+
+            desc = data.get("description", "Unknown error")
+            print(f"[NombaAPI Error] Failed to create virtual account for {account_ref}: {desc}")
+            self.mock_mode = True
+            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
+        except requests.exceptions.RequestException as e:
+            print(f"[NombaAPI Error] Network or API error during virtual account creation for {account_ref}: {e}")
+            self.mock_mode = True
+            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
+
+    def _format_account_name(self, account_name):
+        name = " ".join(str(account_name).split()).strip()
+        if len(name) < 8:
+            name = f"{name} RecurPay".strip()
+        return name[:64]
+
+    def _format_expiry_date(self, expiry_date):
+        if isinstance(expiry_date, datetime):
+            return expiry_date.strftime("%Y-%m-%d %H:%M:%S")
+        return str(expiry_date)
+
+    def _mock_virtual_account(self, account_ref, account_name, expected_amount=None, expiry_date=None):
+        digest = hashlib.sha256(str(account_ref).encode("utf-8")).hexdigest()
+        account_suffix = int(digest[:12], 16) % 1_000_000_000
+        virtual_account = {
+            "accountRef": account_ref,
+            "accountName": account_name,
+            "currency": "NGN",
+            "bankName": "Nombank MFB",
+            "bankAccountNumber": f"9{account_suffix:09d}",
+            "bankAccountName": f"Nomba/{account_name}",
+            "expired": False,
+            "mock": True
+        }
+        if expected_amount is not None:
+            virtual_account["expectedAmount"] = f"{float(expected_amount):.2f}"
+        if expiry_date:
+            virtual_account["expiryDate"] = self._format_expiry_date(expiry_date)
+        return virtual_account
 
 # Example Usage (for testing)
 if __name__ == "__main__":

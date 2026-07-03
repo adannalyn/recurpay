@@ -19,9 +19,14 @@ def display_customer_table(customers):
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Name", style="magenta")
     table.add_column("Email", style="green")
+    table.add_column("Virtual Account", style="yellow")
 
     for customer in customers:
-        table.add_row(customer.customer_id[:8] + "...", customer.name, customer.email)
+        virtual_account = customer.virtual_account or {}
+        account_number = virtual_account.get("bankAccountNumber")
+        bank_name = virtual_account.get("bankName")
+        account_label = f"{bank_name} {account_number}" if account_number and bank_name else "Not created"
+        table.add_row(customer.customer_id[:8] + "...", customer.name, customer.email, account_label)
     console.print(table)
 
 def display_subscription_table(subscriptions, show_customer_name=True):
@@ -114,11 +119,16 @@ def add_subscription():
 
     description = Prompt.ask("Enter subscription description")
     amount = float(Prompt.ask("Enter amount"))
-    frequency = Prompt.ask("Enter frequency (weekly, monthly, custom:X_days)")
+    frequency = Prompt.ask("Enter frequency (weekly, monthly, quarterly, 90 days, custom:7)")
     start_date_str = Prompt.ask("Enter start date (YYYY-MM-DD)", default=datetime.date.today().isoformat())
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
 
-    subscription = Subscription(customer_id, amount, frequency, start_date, description)
+    try:
+        subscription = Subscription(customer_id, amount, frequency, start_date, description)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        return
+
     storage.add_subscription(subscription)
     console.print(f"[green]Subscription '{description}' added for {customer.name}.[/green]")
 
@@ -128,6 +138,50 @@ def list_subscriptions():
         console.print("[yellow]No subscriptions found.[/yellow]")
         return
     display_subscription_table(subscriptions)
+
+def create_customer_virtual_account():
+    console.print("[bold blue]Create Customer Virtual Account[/bold blue]")
+    customers = storage.list_customers()
+    if not customers:
+        console.print("[red]No customers available. Please add a customer first.[/red]")
+        return
+
+    display_customer_table(customers)
+    customer_id = Prompt.ask("Enter customer ID for the virtual account")
+    customer = storage.get_customer(customer_id)
+    if not customer:
+        console.print("[red]Customer not found.[/red]")
+        return
+
+    existing_account = customer.virtual_account or {}
+    if existing_account.get("bankAccountNumber"):
+        replace = Confirm.ask(
+            f"[yellow]{customer.name} already has a virtual account. Replace it?[/yellow]",
+            default=False
+        )
+        if not replace:
+            return
+
+    virtual_account = nomba_api.create_virtual_account_for_sub_account(
+        account_ref=customer.customer_id,
+        account_name=customer.name
+    )
+
+    if not virtual_account:
+        console.print("[red]Failed to create virtual account.[/red]")
+        return
+
+    storage.update_customer(customer_id, virtual_account=virtual_account)
+    bank_name = virtual_account.get("bankName", "Unknown bank")
+    account_number = virtual_account.get("bankAccountNumber", "N/A")
+    account_name = virtual_account.get("bankAccountName", virtual_account.get("accountName", customer.name))
+    mock_note = " [yellow](mock)[/yellow]" if virtual_account.get("mock") else ""
+
+    console.print(f"[green]Virtual account created for {customer.name}.{mock_note}[/green]")
+    console.print(f"Bank: [bold]{bank_name}[/bold]")
+    console.print(f"Account Number: [bold]{account_number}[/bold]")
+    console.print(f"Account Name: [bold]{account_name}[/bold]")
+    console.print(f"Account Ref: [bold]{virtual_account.get('accountRef', customer.customer_id)}[/bold]")
 
 def update_subscription_status():
     subscription_id = Prompt.ask("Enter subscription ID to update status")
@@ -201,10 +255,11 @@ def main_menu():
         console.print("1. Manage Customers")
         console.print("2. Manage Subscriptions")
         console.print("3. List Payment Reminders")
-        console.print("4. Generate Payment Link")
-        console.print("5. Exit")
+        console.print("4. Create Customer Virtual Account")
+        console.print("5. Generate Payment Link")
+        console.print("6. Exit")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"])
 
         if choice == "1":
             customer_menu()
@@ -213,8 +268,10 @@ def main_menu():
         elif choice == "3":
             list_reminders()
         elif choice == "4":
-            generate_payment_link()
+            create_customer_virtual_account()
         elif choice == "5":
+            generate_payment_link()
+        elif choice == "6":
             console.print("[bold green]Exiting RecurPay. Goodbye![/bold green]")
             break
 

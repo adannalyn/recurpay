@@ -41,11 +41,15 @@ class JSONStorage:
                 return customer
         return None
 
-    def update_customer(self, customer_id, new_name, new_email):
+    def update_customer(self, customer_id, new_name=None, new_email=None, **kwargs):
         for customer in self.data["customers"]:
             if customer.customer_id == customer_id:
-                customer.name = new_name
-                customer.email = new_email
+                if new_name is not None:
+                    customer.name = new_name
+                if new_email is not None:
+                    customer.email = new_email
+                for key, value in kwargs.items():
+                    setattr(customer, key, value)
                 self._save_data()
                 return True
         return False

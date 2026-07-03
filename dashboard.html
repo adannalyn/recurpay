@@ -77,6 +77,16 @@
             color: #f39c12;
             font-weight: bold;
         }
+        .virtual-account {
+            background-color: #eef8f1;
+            border: 1px solid #cdebd5;
+            border-radius: 6px;
+            margin-top: 12px;
+            padding: 12px;
+        }
+        .virtual-account p {
+            margin: 4px 0;
+        }
         .no-data {
             text-align: center;
             color: #7f8c8d;
@@ -167,11 +177,22 @@
 
             if (customers && customers.length > 0) {
                 customers.forEach(customer => {
+                    const virtualAccount = customer.virtual_account || {};
+                    const virtualAccountDetails = virtualAccount.bankAccountNumber ? `
+                        <div class="virtual-account">
+                            <p><strong>Bank:</strong> ${virtualAccount.bankName || 'N/A'}</p>
+                            <p><strong>Account No:</strong> ${virtualAccount.bankAccountNumber}</p>
+                            <p><strong>Account Name:</strong> ${virtualAccount.bankAccountName || virtualAccount.accountName || customer.name}</p>
+                            <p><strong>Account Ref:</strong> ${virtualAccount.accountRef || customer.customer_id}</p>
+                        </div>
+                    ` : '<p><strong>Virtual Account:</strong> Not created</p>';
+
                     const customerCard = `
                         <div class="card">
                             <h3>${customer.name}</h3>
                             <p><strong>Email:</strong> ${customer.email}</p>
                             <p><strong>ID:</strong> ${customer.customer_id.substring(0, 8)}...</p>
+                            ${virtualAccountDetails}
                         </div>
                     `;
                     customerListDiv.innerHTML += customerCard;
@@ -199,6 +220,7 @@
                 subscriptions.forEach(sub => {
                     const customer = customers.find(c => c.customer_id === sub.customer_id);
                     const customerName = customer ? customer.name : 'Unknown Customer';
+                    const virtualAccount = customer ? (customer.virtual_account || {}) : {};
                     const nextDueDate = new Date(sub.next_due_date);
                     nextDueDate.setHours(0, 0, 0, 0);
 
@@ -225,6 +247,13 @@
                             <p><strong>Amount:</strong> ${parseFloat(sub.amount).toFixed(2)} NGN</p>
                             <p><strong>Due Date:</strong> ${new Date(sub.next_due_date).toLocaleDateString()}</p>
                             <p><strong>Status:</strong> <span class="${statusClass}">${statusText.toUpperCase()}</span></p>
+                            ${virtualAccount.bankAccountNumber ? `
+                                <div class="virtual-account">
+                                    <p><strong>Pay Into:</strong> ${virtualAccount.bankName || 'N/A'}</p>
+                                    <p><strong>Account No:</strong> ${virtualAccount.bankAccountNumber}</p>
+                                    <p><strong>Account Name:</strong> ${virtualAccount.bankAccountName || virtualAccount.accountName || customerName}</p>
+                                </div>
+                            ` : ''}
                             ${sub.checkout_link ? `<p><strong>Link:</strong> <a href="${sub.checkout_link}" target="_blank">Pay Now</a></p>` : ''}
                             ${sub.last_payment_date ? `<p><strong>Last Paid:</strong> ${new Date(sub.last_payment_date).toLocaleDateString()}</p>` : ''}
                         </div>

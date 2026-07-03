@@ -2,7 +2,7 @@ RecurPay MVP
 
 Subscription Payment Tracker for Nigerian Small Business Owners
 
-RecurPay is a Minimum Viable Product (MVP) designed for the DevCareer x Nomba Hackathon 2026. It aims to help Nigerian small business owners manage recurring billing and automate payment reminders using Nomba's checkout infrastructure. The application features a command-line interface (CLI) for core functionalities and a simple HTML dashboard for visual data representation.
+RecurPay is a Minimum Viable Product (MVP) designed for the DevCareer x Nomba Hackathon 2026. It helps Nigerian small business owners manage recurring billing by assigning customer virtual accounts under one Nomba sub-account, tracking due dates, and reconciling recurring payments through each customer's accountRef. The application features a command-line interface (CLI) for core functionalities and a simple HTML dashboard for visual data representation.
 
 
 Project Structure
@@ -13,7 +13,7 @@ The project is organized into the following files:
 
 config.py: Stores Nomba API credentials and other application settings.
 
-nomba_api.py: Handles integration with the Nomba API for authentication and checkout link generation, including a mock fallback mode.
+nomba_api.py: Handles integration with the Nomba API for authentication, customer virtual account creation, and checkout link generation, including a mock fallback mode.
 
 models.py: Defines the data models for Customer and Subscription.
 
@@ -34,7 +34,9 @@ The recurpay.py CLI application provides the following features:
 
 Customer Management: Allows users to add, edit, delete, and list customer records.
 
-Subscription/Billing Cycle Setup: Supports defining recurring payments with weekly, monthly, or custom (e.g., custom:7 for 7 days) intervals.
+Customer Virtual Accounts: Creates a dedicated Nomba virtual account for each customer under the team's configured sub-account, using the customer ID as accountRef for reconciliation.
+
+Subscription/Billing Cycle Setup: Supports defining recurring payments with weekly, monthly, quarterly, yearly, custom (e.g., custom:7), or plain day-based intervals such as 90 days.
 
 Due Date Tracking: Automatically tracks payment due dates and detects overdue payments.
 
@@ -51,7 +53,7 @@ Rich Terminal Output: Utilizes the rich library for aesthetically pleasing and i
 
 Nomba API Integration
 
-RecurPay integrates with the Nomba API for secure authentication and seamless checkout link generation. The key endpoints used are:
+RecurPay integrates with the Nomba API for secure authentication, virtual account collection, and optional checkout link generation. The key endpoints used are:
 
 
 
@@ -60,6 +62,12 @@ Authentication: POST https://sandbox.nomba.com/v1/auth/token/issue
 Headers: Content-Type: application/json, accountId: <your_account_id>
 Body: {"grant_type": "client_credentials", "client_id": "...", "client_secret": "..."}
 The access_token is extracted from data["data"]["access_token"] in the response.
+
+Virtual Account Creation: POST https://sandbox.nomba.com/v1/accounts/virtual/{subAccountId}
+
+Headers: Authorization: Bearer <token>, Content-Type: application/json, accountId: <your_parent_account_id>
+Body: Includes accountRef and accountName, with optional expectedAmount and expiryDate for one-time payment use cases.
+The virtual account details are extracted from data["data"] in the response and stored against the customer.
 
 Checkout Link Generation: POST https://sandbox.nomba.com/v1/checkout/order
 
@@ -70,7 +78,7 @@ The checkoutLink is extracted from data["data"]["checkoutLink"] in the response.
 
 Mock/Fallback Mode
 
-To ensure resilience and allow development despite potential API issues (e.g., 403 errors with shared hackathon credentials), nomba_api.py includes a mock fallback mode. If the Nomba API returns a 403 error, any other requests.exceptions.RequestException, or fails to return a valid token/checkout link, the system gracefully switches to mock mode. In this mode, placeholder checkout links are generated (e.g., https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}), and a warning is printed to the console.
+To ensure resilience and allow development despite potential API issues (e.g., 403 errors with shared hackathon credentials), nomba_api.py includes a mock fallback mode. If the Nomba API returns a 403 error, any other requests.exceptions.RequestException, or fails to return a valid token, checkout link, or virtual account, the system gracefully switches to mock mode. In this mode, placeholder checkout links and deterministic mock virtual account numbers are generated, and a warning is printed to the console.
 
 
 HTML Dashboard (dashboard.html)
@@ -81,7 +89,7 @@ The dashboard.html file provides a simple, standalone web interface to visualize
 
 Clean, Modern Design: A responsive layout suitable for mobile devices (e.g., Termux users).
 
-Customer List: Displays all registered customers.
+Customer List: Displays all registered customers and their assigned virtual account details when available.
 
 Upcoming & Overdue Payments: Highlights payments that are due soon or are already overdue (in red).
 
@@ -97,7 +105,7 @@ Navigate to the project directory:
 cd /home/ubuntu/recurpay
 
 Install dependencies:
-pip3 install rich requests
+pip3 install -r requirements.txt
 
 Run the CLI application:
 python3 recurpay.py
@@ -117,4 +125,3 @@ Hackathon Ready: This MVP provides core functionalities and a clear demonstratio
 
 
 Built for the DevCareer x Nomba Hackathon 2026.
-
