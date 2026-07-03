@@ -73,7 +73,7 @@ class NombaAPI:
             "order": {
                 "amount": int(amount * 100),
                 "currency": "NGN",
-                "callbackUrl": "https://your-app.com/nomba-callback", # Placeholder callback URL
+                "callbackUrl": "https://eo5h6zze4pfeyfn.m.pipedream.net",
                 "customerEmail": customer_email,
                 "orderReference": order_reference,
                 "orderMetaData": {"description": description} # Pass description as metadata
