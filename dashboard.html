@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RecurPay Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        h1, h2 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .section {
+            margin-bottom: 40px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        .section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background-color: #fdfdfd;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card h3 {
+            color: #34495e;
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        .card p {
+            margin: 5px 0;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+        .card p strong {
+            color: #555;
+        }
+        .overdue {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .paid {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .pending {
+            color: #f39c12;
+            font-weight: bold;
+        }
+        .no-data {
+            text-align: center;
+            color: #7f8c8d;
+            padding: 20px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            font-size: 0.85em;
+            color: #7f8c8d;
+        }
+        @media (max-width: 768px) {
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+            .container {
+                margin: 10px auto;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RecurPay Dashboard</h1>
+        <p style="text-align: center; color: #7f8c8d;">Subscription Payment Tracker for Nigerian Small Business Owners</p>
+
+        <div class="section">
+            <h2>Customers</h2>
+            <div id="customer-list" class="data-grid">
+                <!-- Customer cards will be loaded here by JavaScript -->
+                <div class="no-data">No customer data available. Please run the CLI to add customers and subscriptions, then refresh this page.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Upcoming & Overdue Payments</h2>
+            <div id="upcoming-overdue-payments" class="data-grid">
+                <!-- Upcoming/Overdue payment cards will be loaded here by JavaScript -->
+                <div class="no-data">No upcoming or overdue payments.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Payment History</h2>
+            <div id="payment-history" class="data-grid">
+                <!-- Payment history cards will be loaded here by JavaScript -->
+                <div class="no-data">No payment history available.</div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2026 RecurPay. Built for DevCareer x Nomba Hackathon.</p>
+            <p>To update data, use the RecurPay CLI application and refresh this page.</p>
+        </div>
+    </div>
+
+    <script>
+        // This script will load data from data.json and populate the dashboard
+        // For hackathon submission, you might need to manually generate data.json
+        // by running the CLI, or implement a simple server to serve the JSON.
+
+        const DATA_FILE_PATH = './data.json'; // Relative path to your data file
+
+        async function loadDashboardData() {
+            try {
+                const response = await fetch(DATA_FILE_PATH);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('Loaded data:', data);
+                renderCustomers(data.customers);
+                renderPayments(data.subscriptions, data.customers);
+            } catch (error) {
+                console.error('Could not load dashboard data:', error);
+                document.getElementById('customer-list').innerHTML = '<div class="no-data">Failed to load customer data. Ensure data.json exists and is accessible.</div>';
+                document.getElementById('upcoming-overdue-payments').innerHTML = '<div class="no-data">Failed to load payment data.</div>';
+                document.getElementById('payment-history').innerHTML = '<div class="no-data">Failed to load payment history.</div>';
+            }
+        }
+
+        function renderCustomers(customers) {
+            const customerListDiv = document.getElementById('customer-list');
+            customerListDiv.innerHTML = ''; // Clear existing content
+
+            if (customers && customers.length > 0) {
+                customers.forEach(customer => {
+                    const customerCard = `
+                        <div class="card">
+                            <h3>${customer.name}</h3>
+                            <p><strong>Email:</strong> ${customer.email}</p>
+                            <p><strong>ID:</strong> ${customer.customer_id.substring(0, 8)}...</p>
+                        </div>
+                    `;
+                    customerListDiv.innerHTML += customerCard;
+                });
+            } else {
+                customerListDiv.innerHTML = '<div class="no-data">No customer data available.</div>';
+            }
+        }
+
+        function renderPayments(subscriptions, customers) {
+            const upcomingOverdueDiv = document.getElementById('upcoming-overdue-payments');
+            const paymentHistoryDiv = document.getElementById('payment-history');
+            upcomingOverdueDiv.innerHTML = '';
+            paymentHistoryDiv.innerHTML = '';
+
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize today to start of day
+
+            let hasUpcomingOverdue = false;
+            let hasPaymentHistory = false;
+
+            if (subscriptions && subscriptions.length > 0) {
+                subscriptions.sort((a, b) => new Date(a.next_due_date) - new Date(b.next_due_date));
+
+                subscriptions.forEach(sub => {
+                    const customer = customers.find(c => c.customer_id === sub.customer_id);
+                    const customerName = customer ? customer.name : 'Unknown Customer';
+                    const nextDueDate = new Date(sub.next_due_date);
+                    nextDueDate.setHours(0, 0, 0, 0);
+
+                    let statusClass = '';
+                    let statusText = sub.status;
+
+                    if (sub.status === 'paid') {
+                        statusClass = 'paid';
+                        hasPaymentHistory = true;
+                    } else if (nextDueDate < today) {
+                        statusClass = 'overdue';
+                        statusText = 'Overdue';
+                        hasUpcomingOverdue = true;
+                    } else if (nextDueDate >= today) {
+                        statusClass = 'pending';
+                        statusText = 'Upcoming';
+                        hasUpcomingOverdue = true;
+                    }
+
+                    const paymentCard = `
+                        <div class="card ${statusClass}">
+                            <h3>${sub.description}</h3>
+                            <p><strong>Customer:</strong> ${customerName}</p>
+                            <p><strong>Amount:</strong> ${parseFloat(sub.amount).toFixed(2)} NGN</p>
+                            <p><strong>Due Date:</strong> ${new Date(sub.next_due_date).toLocaleDateString()}</p>
+                            <p><strong>Status:</strong> <span class="${statusClass}">${statusText.toUpperCase()}</span></p>
+                            ${sub.checkout_link ? `<p><strong>Link:</strong> <a href="${sub.checkout_link}" target="_blank">Pay Now</a></p>` : ''}
+                            ${sub.last_payment_date ? `<p><strong>Last Paid:</strong> ${new Date(sub.last_payment_date).toLocaleDateString()}</p>` : ''}
+                        </div>
+                    `;
+
+                    if (sub.status === 'paid') {
+                        paymentHistoryDiv.innerHTML += paymentCard;
+                    } else {
+                        upcomingOverdueDiv.innerHTML += paymentCard;
+                    }
+                });
+            }
+
+            if (!hasUpcomingOverdue) {
+                upcomingOverdueDiv.innerHTML = '<div class="no-data">No upcoming or overdue payments.</div>';
+            }
+            if (!hasPaymentHistory) {
+                paymentHistoryDiv.innerHTML = '<div class="no-data">No payment history available.</div>';
+            }
+        }
+
+        // Load data when the page loads
+        window.onload = loadDashboardData;
+    </script>
+</body>
+</html>
