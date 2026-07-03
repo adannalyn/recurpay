@@ -23,7 +23,7 @@ class NombaAPI:
         if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
             return self.access_token
 
-        auth_url = f"https://sandbox.nomba.com/v1/auth/token/issue" # Use the correct sandbox auth URL
+        auth_url = f"{self.base_url}/auth/token/issue"
         headers = {
             "Content-Type": "application/json",
             "accountId": self.account_id
@@ -103,6 +103,14 @@ class NombaAPI:
             self.mock_mode = True
             return f"https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}"
 
+    def get_checkout_order_status(self, order_reference):
+        return self._send_authenticated_request(
+            "get",
+            f"/checkout/order/{order_reference}",
+            f"fetch checkout order status for {order_reference}",
+            fallback={"orderReference": order_reference, "status": "unknown", "mock": True}
+        )
+
     def create_virtual_account_for_sub_account(self, account_ref, account_name, expected_amount=None, expiry_date=None, bvn=None):
         account_name = self._format_account_name(account_name)
 
@@ -155,6 +163,99 @@ class NombaAPI:
             self.mock_mode = True
             return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
 
+    def list_virtual_accounts(self, filters=None):
+        return self._send_authenticated_request(
+            "post",
+            "/accounts/virtual/list",
+            "list virtual accounts",
+            payload=filters or {},
+            fallback={"virtualAccounts": [], "mock": True}
+        )
+
+    def fetch_virtual_account(self, identifier):
+        return self._send_authenticated_request(
+            "get",
+            f"/accounts/virtual/{identifier}",
+            f"fetch virtual account {identifier}",
+            fallback={"identifier": identifier, "mock": True}
+        )
+
+    def expire_virtual_account(self, identifier):
+        return self._send_authenticated_request(
+            "delete",
+            f"/accounts/virtual/{identifier}",
+            f"expire virtual account {identifier}",
+            fallback={"identifier": identifier, "expired": False, "mock": True}
+        )
+
+    def get_sub_account_balance(self):
+        if not self.sub_account_id:
+            print("[NombaAPI Warning] No sub-account ID configured. Returning mock balance.")
+            return self._mock_balance()
+
+        return self._send_authenticated_request(
+            "get",
+            f"/accounts/{self.sub_account_id}/balance",
+            "fetch sub-account balance",
+            fallback=self._mock_balance()
+        )
+
+    def list_sub_account_transactions(self, filters=None):
+        if not self.sub_account_id:
+            print("[NombaAPI Warning] No sub-account ID configured. Returning mock transaction list.")
+            return self._mock_transactions()
+
+        return self._send_authenticated_request(
+            "get",
+            f"/transactions/accounts/{self.sub_account_id}",
+            "list sub-account transactions",
+            params=filters or {},
+            fallback=self._mock_transactions()
+        )
+
+    def requery_transaction(self, session_id):
+        return self._send_authenticated_request(
+            "get",
+            f"/transactions/requery/{session_id}",
+            f"requery transaction {session_id}",
+            fallback={"sessionId": session_id, "status": "unknown", "mock": True}
+        )
+
+    def _send_authenticated_request(self, method, path, action, payload=None, params=None, fallback=None):
+        if self.mock_mode:
+            print(f"[NombaAPI Warning] Nomba API is in mock mode. Using mock response for {action}.")
+            return fallback
+
+        token = self._get_access_token()
+        if not token:
+            self.mock_mode = True
+            print(f"[NombaAPI Warning] Could not get access token. Using mock response for {action}.")
+            return fallback
+
+        request_method = getattr(requests, method.lower())
+        url = f"{self.base_url}{path}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "accountId": self.account_id
+        }
+
+        try:
+            response = request_method(url, headers=headers, json=payload, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") == "00":
+                return data.get("data", data)
+
+            desc = data.get("description", "Unknown error")
+            print(f"[NombaAPI Error] Failed to {action}: {desc}")
+            self.mock_mode = True
+            return fallback
+        except requests.exceptions.RequestException as e:
+            print(f"[NombaAPI Error] Network or API error while trying to {action}: {e}")
+            self.mock_mode = True
+            return fallback
+
     def _format_account_name(self, account_name):
         name = " ".join(str(account_name).split()).strip()
         if len(name) < 8:
@@ -184,6 +285,20 @@ class NombaAPI:
         if expiry_date:
             virtual_account["expiryDate"] = self._format_expiry_date(expiry_date)
         return virtual_account
+
+    def _mock_balance(self):
+        return {
+            "availableBalance": "0.00",
+            "ledgerBalance": "0.00",
+            "currency": "NGN",
+            "mock": True
+        }
+
+    def _mock_transactions(self):
+        return {
+            "transactions": [],
+            "mock": True
+        }
 
 # Example Usage (for testing)
 if __name__ == "__main__":

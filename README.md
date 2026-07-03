@@ -13,7 +13,7 @@ The project is organized into the following files:
 
 config.py: Stores Nomba API credentials and other application settings.
 
-nomba_api.py: Handles integration with the Nomba API for authentication, customer virtual account creation, and checkout link generation, including a mock fallback mode.
+nomba_api.py: Handles integration with the Nomba API for authentication, customer virtual account lifecycle, balance checks, transaction reconciliation, checkout status, and checkout link generation, including a mock fallback mode.
 
 models.py: Defines the data models for Customer and Subscription.
 
@@ -35,6 +35,8 @@ The recurpay.py CLI application provides the following features:
 Customer Management: Allows users to add, edit, delete, and list customer records.
 
 Customer Virtual Accounts: Creates a dedicated Nomba virtual account for each customer under the team's configured sub-account, using the customer ID as accountRef for reconciliation.
+
+Nomba Reconciliation Tools: Lists virtual accounts, checks sub-account balance, and fetches account transactions so inflows can be matched to customers by accountRef.
 
 Subscription/Billing Cycle Setup: Supports defining recurring payments with weekly, monthly, quarterly, yearly, custom (e.g., custom:7), or plain day-based intervals such as 90 days.
 
@@ -69,16 +71,37 @@ Headers: Authorization: Bearer <token>, Content-Type: application/json, accountI
 Body: Includes accountRef and accountName, with optional expectedAmount and expiryDate for one-time payment use cases.
 The virtual account details are extracted from data["data"] in the response and stored against the customer.
 
+Virtual Account List: POST https://sandbox.nomba.com/v1/accounts/virtual/list
+
+Virtual Account Fetch/Expire: GET or DELETE https://sandbox.nomba.com/v1/accounts/virtual/{identifier}
+
+Sub-account Balance: GET https://sandbox.nomba.com/v1/accounts/{subAccountId}/balance
+
+Transaction Reconciliation: GET https://sandbox.nomba.com/v1/transactions/accounts/{subAccountId}
+
+Transaction Requery: GET https://sandbox.nomba.com/v1/transactions/requery/{sessionId}
+
 Checkout Link Generation: POST https://sandbox.nomba.com/v1/checkout/order
 
 Headers: Authorization: Bearer <token>, Content-Type: application/json, accountId: <your_account_id>
 Body: Includes order object with amount, currency (NGN), callbackUrl, customerEmail, orderReference, and optional orderMetaData.
 The checkoutLink is extracted from data["data"]["checkoutLink"] in the response.
 
+Checkout Status: GET https://sandbox.nomba.com/v1/checkout/order/{orderReference}
+
 
 Mock/Fallback Mode
 
-To ensure resilience and allow development despite potential API issues (e.g., 403 errors with shared hackathon credentials), nomba_api.py includes a mock fallback mode. If the Nomba API returns a 403 error, any other requests.exceptions.RequestException, or fails to return a valid token, checkout link, or virtual account, the system gracefully switches to mock mode. In this mode, placeholder checkout links and deterministic mock virtual account numbers are generated, and a warning is printed to the console.
+To ensure resilience and allow development despite potential API issues (e.g., 403 errors with shared hackathon credentials), nomba_api.py includes a mock fallback mode. If the Nomba API returns a 403 error, any other requests.exceptions.RequestException, or fails to return a valid token, checkout link, virtual account, balance, or transaction list, the system gracefully switches to mock mode. In this mode, placeholder checkout links, deterministic mock virtual account numbers, empty mock transaction lists, and zero-balance mock responses are generated, and a warning is printed to the console.
+
+
+Architecture Note
+
+RecurPay follows the hackathon-recommended hierarchy:
+
+One Nomba Hackathon parent account -> one team sub-account -> many customer virtual accounts.
+
+Each customer's RecurPay customer ID is used as accountRef. When Nomba sends a webhook or returns account transactions, RecurPay can match the accountRef back to the customer and record the payment against that customer's recurring subscription.
 
 
 HTML Dashboard (dashboard.html)

@@ -183,6 +183,132 @@ def create_customer_virtual_account():
     console.print(f"Account Name: [bold]{account_name}[/bold]")
     console.print(f"Account Ref: [bold]{virtual_account.get('accountRef', customer.customer_id)}[/bold]")
 
+def _records_from_payload(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("transactions", "virtualAccounts", "virtual_accounts", "accounts", "items", "records", "results", "content", "data"):
+        value = payload.get(key)
+        records = _records_from_payload(value)
+        if records:
+            return records
+    return []
+
+def _nested_value(data, *keys):
+    if not isinstance(data, dict):
+        return None
+
+    for key in keys:
+        if key in data:
+            return data[key]
+
+    for value in data.values():
+        found = _nested_value(value, *keys)
+        if found is not None:
+            return found
+    return None
+
+def _customer_from_transaction(transaction):
+    account_ref = _nested_value(transaction, "accountRef", "accountReference", "account_ref")
+    if account_ref:
+        customer = storage.get_customer(account_ref)
+        if customer:
+            return customer, account_ref
+
+    account_number = _nested_value(
+        transaction,
+        "bankAccountNumber",
+        "accountNumber",
+        "account_number",
+        "destinationAccountNumber"
+    )
+    if account_number:
+        for customer in storage.list_customers():
+            virtual_account = customer.virtual_account or {}
+            if str(virtual_account.get("bankAccountNumber")) == str(account_number):
+                return customer, virtual_account.get("accountRef", customer.customer_id)
+
+    return None, account_ref or "N/A"
+
+def list_nomba_virtual_accounts():
+    console.print("[bold blue]Nomba Virtual Accounts[/bold blue]")
+    payload = nomba_api.list_virtual_accounts()
+    accounts = _records_from_payload(payload)
+
+    if not accounts:
+        console.print("[yellow]No virtual accounts returned yet.[/yellow]")
+        return
+
+    table = Table(title="Virtual Accounts")
+    table.add_column("Account Ref", style="cyan")
+    table.add_column("Account Name", style="magenta")
+    table.add_column("Bank", style="green")
+    table.add_column("Account Number", style="yellow")
+    table.add_column("Status", style="white")
+
+    for account in accounts:
+        table.add_row(
+            str(_nested_value(account, "accountRef", "accountReference", "account_ref") or "N/A"),
+            str(_nested_value(account, "accountName", "bankAccountName", "account_name") or "N/A"),
+            str(_nested_value(account, "bankName", "bank_name") or "N/A"),
+            str(_nested_value(account, "bankAccountNumber", "accountNumber", "account_number") or "N/A"),
+            "Expired" if _nested_value(account, "expired") else "Active"
+        )
+    console.print(table)
+
+def view_nomba_balance():
+    console.print("[bold blue]Nomba Sub-account Balance[/bold blue]")
+    balance = nomba_api.get_sub_account_balance()
+
+    if not isinstance(balance, dict):
+        console.print(f"[yellow]Balance response:[/yellow] {balance}")
+        return
+
+    table = Table(title="Sub-account Balance")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="green")
+
+    for key, value in balance.items():
+        if isinstance(value, (dict, list)):
+            continue
+        table.add_row(str(key), str(value))
+    console.print(table)
+
+def reconcile_nomba_transactions():
+    console.print("[bold blue]Reconcile Nomba Transactions[/bold blue]")
+    payload = nomba_api.list_sub_account_transactions()
+    transactions = _records_from_payload(payload)
+
+    if not transactions:
+        console.print("[yellow]No transactions returned yet. In production, webhooks should update payments as inflows arrive.[/yellow]")
+        return
+
+    table = Table(title="Transaction Reconciliation")
+    table.add_column("Customer", style="magenta")
+    table.add_column("Account Ref", style="cyan")
+    table.add_column("Amount", style="yellow")
+    table.add_column("Status", style="green")
+    table.add_column("Session ID", style="blue")
+    table.add_column("Date", style="white")
+
+    for transaction in transactions:
+        customer, account_ref = _customer_from_transaction(transaction)
+        amount = _nested_value(transaction, "amount", "transactionAmount", "paidAmount")
+        status = _nested_value(transaction, "status", "transactionStatus", "paymentStatus")
+        session_id = _nested_value(transaction, "sessionId", "sessionID", "session_id")
+        date = _nested_value(transaction, "createdAt", "created_at", "paymentDate", "transactionDate")
+        table.add_row(
+            customer.name if customer else "Unmatched",
+            str(account_ref),
+            str(amount or "N/A"),
+            str(status or "N/A"),
+            str(session_id or "N/A"),
+            str(date or "N/A")
+        )
+    console.print(table)
+
 def update_subscription_status():
     subscription_id = Prompt.ask("Enter subscription ID to update status")
     subscription = storage.get_subscription(subscription_id)
@@ -255,11 +381,10 @@ def main_menu():
         console.print("1. Manage Customers")
         console.print("2. Manage Subscriptions")
         console.print("3. List Payment Reminders")
-        console.print("4. Create Customer Virtual Account")
-        console.print("5. Generate Payment Link")
-        console.print("6. Exit")
+        console.print("4. Nomba Tools")
+        console.print("5. Exit")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5"])
 
         if choice == "1":
             customer_menu()
@@ -268,10 +393,8 @@ def main_menu():
         elif choice == "3":
             list_reminders()
         elif choice == "4":
-            create_customer_virtual_account()
+            nomba_menu()
         elif choice == "5":
-            generate_payment_link()
-        elif choice == "6":
             console.print("[bold green]Exiting RecurPay. Goodbye![/bold green]")
             break
 
@@ -314,6 +437,31 @@ def subscription_menu():
         elif choice == "3":
             update_subscription_status()
         elif choice == "4":
+            break
+
+def nomba_menu():
+    while True:
+        console.print("\n[bold underline]Nomba Tools[/bold underline]")
+        console.print("1. Create Customer Virtual Account")
+        console.print("2. List Virtual Accounts")
+        console.print("3. View Sub-account Balance")
+        console.print("4. Reconcile Transactions")
+        console.print("5. Generate Checkout Link")
+        console.print("6. Back to Main Menu")
+
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"])
+
+        if choice == "1":
+            create_customer_virtual_account()
+        elif choice == "2":
+            list_nomba_virtual_accounts()
+        elif choice == "3":
+            view_nomba_balance()
+        elif choice == "4":
+            reconcile_nomba_transactions()
+        elif choice == "5":
+            generate_payment_link()
+        elif choice == "6":
             break
 
 if __name__ == "__main__":

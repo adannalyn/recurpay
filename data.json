@@ -3,12 +3,20 @@
         {
             "customer_id": "132e4b4e-e6be-4092-b1e5-9f76ea8a193a",
             "name": "Jane Uche",
-            "email": "janeuche@gmail.com"
+            "email": "janeuche@gmail.com",
+            "virtual_account": {}
         },
         {
             "customer_id": "c144903b-b7cb-436b-b0da-a030da23f35c",
             "name": "Collins Mba",
-            "email": "collinsmba@gmail.com"
+            "email": "collinsmba@gmail.com",
+            "virtual_account": {}
+        },
+        {
+            "customer_id": "0925092b-bfcd-440c-947d-7fac1322ec94",
+            "name": "Jane Pharma",
+            "email": "jane@gmail.com",
+            "virtual_account": {}
         }
     ],
     "subscriptions": [
