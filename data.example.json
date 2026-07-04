@@ -1,0 +1,30 @@
+{
+  "customers": [
+    {
+      "customer_id": "example-customer-id-1",
+      "name": "Jane Doe",
+      "email": "jane@example.com",
+      "virtual_account": {}
+    },
+    {
+      "customer_id": "example-customer-id-2",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "virtual_account": {}
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscription_id": "example-subscription-id-1",
+      "customer_id": "example-customer-id-1",
+      "amount": "5000.0",
+      "frequency": "90 days",
+      "start_date": "2026-01-01T00:00:00",
+      "description": "School fees",
+      "next_due_date": "2026-04-01T00:00:00",
+      "status": "pending",
+      "last_payment_date": null,
+      "checkout_link": null
+    }
+  ]
+}
