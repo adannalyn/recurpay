@@ -1,3 +1,39 @@
-config.py
+# Python cache and build artifacts
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Environment and configuration files
+.env
+.env.local
+.env.*.local
+# Keep config.py tracked (no secrets inside)
+# If you still store secrets there temporarily, uncomment the next line:
+# config.py
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.swp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary data
+*.log
+*.tmp
+*.bak
+
+# Data files that may contain sensitive tokens
 data.json
+
