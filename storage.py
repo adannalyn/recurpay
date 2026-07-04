@@ -10,17 +10,44 @@ class JSONStorage:
         self.data = self._load_data()
 
     def _load_data(self):
+        example_file = os.path.join(
+            os.path.dirname(self.data_file),
+            "data.example.json"
+    )
+
+        # Initialize data.json from the example file if it doesn't exist
         if not os.path.exists(self.data_file):
-            return {"customers": [], "subscriptions": []}
-        with open(self.data_file, "r") as f:
-            try:
+            if os.path.exists(example_file):
+                with open(example_file, "r") as src, open(self.data_file, "w") as dst:
+                    dst.write(src.read())
+            else:
+                with open(self.data_file, "w") as f:
+                    json.dump(
+                        {"customers": [], "subscriptions": []},
+                        f,
+                        indent=4
+                    )
+
+        try:
+            with open(self.data_file, "r") as f:
                 data = json.load(f)
-                # Deserialize datetime objects
-                data["customers"] = [Customer.from_dict(c) for c in data.get("customers", [])]
-                data["subscriptions"] = [Subscription.from_dict(s) for s in data.get("subscriptions", [])]
-                return data
-            except json.JSONDecodeError:
-                return {"customers": [], "subscriptions": []}
+
+            data["customers"] = [
+                Customer.from_dict(c)
+                for c in data.get("customers", [])
+            ]
+            data["subscriptions"] = [
+                Subscription.from_dict(s)
+                for s in data.get("subscriptions", [])
+            ]
+
+            return data
+
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {
+                "customers": [],
+                "subscriptions": []
+            }
 
     def _save_data(self):
         with open(self.data_file, "w") as f:
