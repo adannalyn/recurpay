@@ -1,7 +1,7 @@
 import requests
 import hashlib
 from datetime import datetime, timedelta
-from config import NOMBA_ACCOUNT_ID, NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, NOMBA_BASE_URL, DEBUG
+from config import NOMBA_ACCOUNT_ID, NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, NOMBA_BASE_URL, NOMBA_CALLBACK_URL, DEBUG
 
 try:
     from config import NOMBA_SUB_ACCOUNT_ID
@@ -79,7 +79,7 @@ class NombaAPI:
             "order": {
                 "amount": int(amount * 100),
                 "currency": "NGN",
-                "callbackUrl": "https://eo5h6zze4pfeyfn.m.pipedream.net",
+                "callbackUrl": NOMBA_CALLBACK_URL,
                 "customerEmail": customer_email,
                 "orderReference": order_reference,
                 "orderMetaData": {"description": description} # Pass description as metadata
