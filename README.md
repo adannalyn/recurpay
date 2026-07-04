@@ -1,149 +1,297 @@
-RecurPay MVP
+# RecurPay MVP
 
-Subscription Payment Tracker for Nigerian Small Business Owners
+**Subscription Payment Tracker for Nigerian Small Business Owners**
 
-RecurPay is a Minimum Viable Product (MVP) designed for the DevCareer x Nomba Hackathon 2026. It helps Nigerian small business owners manage recurring billing by assigning customer virtual accounts under one Nomba sub-account, tracking due dates, and reconciling recurring payments through each customer's accountRef. The application features a command-line interface (CLI) for core functionalities and a simple HTML dashboard for visual data representation.
+RecurPay is a Minimum Viable Product (MVP) built for the DevCareer x Nomba Hackathon 2026. It helps Nigerian small business owners manage recurring payments by assigning each customer a dedicated Nomba virtual account under a single team sub-account, tracking subscription due dates, and reconciling payments using each customer's `accountRef`.
 
+The project provides a command-line interface (CLI) for managing customers and subscriptions, along with a lightweight HTML dashboard for viewing customer and payment data.
 
-Project Structure
+---
 
-The project is organized into the following files:
+# Project Structure
 
+* **config.py** – Loads application configuration from environment variables and exposes settings used throughout the application.
+* **.env.example** – Template containing the required environment variables.
+* **nomba_api.py** – Handles authentication, virtual account management, balance checks, transaction reconciliation, checkout link generation, checkout status checks, and mock fallback behavior.
+* **models.py** – Defines the Customer and Subscription data models.
+* **storage.py** – Handles persistent JSON storage.
+* **recurpay.py** – Main CLI application.
+* **dashboard.html** – Standalone HTML dashboard for visualizing customer and subscription data.
+* **data.example.json** – Sample data structure used to initialize local storage.
+* **README.md** – Project documentation.
 
+---
 
-config.py: Stores Nomba API credentials and other application settings.
+# Backend Features (CLI)
 
-nomba_api.py: Handles integration with the Nomba API for authentication, customer virtual account lifecycle, balance checks, transaction reconciliation, checkout status, and checkout link generation, including a mock fallback mode.
+The CLI provides the following functionality:
 
-models.py: Defines the data models for Customer and Subscription.
+* Create, edit, delete, and list customers.
+* Generate a dedicated Nomba virtual account for every customer under the configured sub-account.
+* Reconcile payments using each customer's `accountRef`.
+* View customer virtual accounts.
+* Check the configured sub-account balance.
+* Retrieve account transactions.
+* Create recurring subscriptions using weekly, monthly, quarterly, yearly, custom, or day-based billing intervals.
+* Automatically track upcoming and overdue payments.
+* Generate Nomba checkout links for pending payments.
+* Track payment status (Pending, Paid, Overdue).
+* Display subscriptions requiring payment reminders.
+* Persist customer and subscription data locally using JSON.
+* Display formatted CLI output using the `rich` library.
 
-storage.py: Manages persistent data storage using a JSON file (data.json).
+---
 
-recurpay.py: The main CLI application that provides all backend features.
+# Nomba API Integration
 
-dashboard.html: A standalone HTML/CSS file for a simple frontend dashboard.
+RecurPay integrates with the Nomba Sandbox API for authentication, virtual account management, transaction reconciliation, and checkout generation.
 
-README.md: This project documentation.
+### Authentication
 
+**POST**
 
-Backend Features (Python CLI)
+`https://sandbox.nomba.com/v1/auth/token/issue`
 
-The recurpay.py CLI application provides the following features:
+Headers:
 
+* `Content-Type: application/json`
+* `accountId: <your_parent_account_id>`
 
+Request Body:
 
-Customer Management: Allows users to add, edit, delete, and list customer records.
+```json
+{
+  "grant_type": "client_credentials",
+  "client_id": "<your_client_id>",
+  "client_secret": "<your_client_secret>"
+}
+```
 
-Customer Virtual Accounts: Creates a dedicated Nomba virtual account for each customer under the team's configured sub-account, using the customer ID as accountRef for reconciliation.
+The application extracts the access token from:
 
-Nomba Reconciliation Tools: Lists virtual accounts, checks sub-account balance, and fetches account transactions so inflows can be matched to customers by accountRef.
+```text
+data["data"]["access_token"]
+```
 
-Subscription/Billing Cycle Setup: Supports defining recurring payments with weekly, monthly, quarterly, yearly, custom (e.g., custom:7), or plain day-based intervals such as 90 days.
+---
 
-Due Date Tracking: Automatically tracks payment due dates and detects overdue payments.
+### Virtual Account Creation
 
-Nomba Checkout Link Generation: Integrates with the Nomba API to generate unique checkout links for due payments. Includes a robust mock fallback mechanism when the API is unavailable or returns errors.
+**POST**
 
-Payment Status Tracking: Manages payment statuses, including pending, paid, and overdue.
+`https://sandbox.nomba.com/v1/accounts/virtual/{subAccountId}`
 
-Payment Reminders List: Displays a list of subscriptions that are pending or overdue, indicating who needs to be reminded.
+Headers:
 
-JSON File Storage: All customer and subscription data is persistently stored in data.json between sessions.
+* `Authorization: Bearer <access_token>`
+* `Content-Type: application/json`
+* `accountId: <your_parent_account_id>`
 
-Rich Terminal Output: Utilizes the rich library for aesthetically pleasing and informative command-line output.
+The request includes:
 
+* `accountRef`
+* `accountName`
 
-Nomba API Integration
+Optional fields include:
 
-RecurPay integrates with the Nomba API for secure authentication, virtual account collection, and optional checkout link generation. The key endpoints used are:
+* `expectedAmount`
+* `expiryDate`
 
+Virtual account details are extracted from:
 
+```text
+data["data"]
+```
 
-Authentication: POST https://sandbox.nomba.com/v1/auth/token/issue
+and stored against the customer.
 
-Headers: Content-Type: application/json, accountId: <your_account_id>
-Body: {"grant_type": "client_credentials", "client_id": "...", "client_secret": "..."}
-The access_token is extracted from data["data"]["access_token"] in the response.
+---
 
-Virtual Account Creation: POST https://sandbox.nomba.com/v1/accounts/virtual/{subAccountId}
+### Additional Endpoints
 
-Headers: Authorization: Bearer <token>, Content-Type: application/json, accountId: <your_parent_account_id>
-Body: Includes accountRef and accountName, with optional expectedAmount and expiryDate for one-time payment use cases.
-The virtual account details are extracted from data["data"] in the response and stored against the customer.
+Virtual Account List
 
-Virtual Account List: POST https://sandbox.nomba.com/v1/accounts/virtual/list
+```
+POST /accounts/virtual/list
+```
 
-Virtual Account Fetch/Expire: GET or DELETE https://sandbox.nomba.com/v1/accounts/virtual/{identifier}
+Virtual Account Fetch
 
-Sub-account Balance: GET https://sandbox.nomba.com/v1/accounts/{subAccountId}/balance
+```
+GET /accounts/virtual/{identifier}
+```
 
-Transaction Reconciliation: GET https://sandbox.nomba.com/v1/transactions/accounts/{subAccountId}
+Virtual Account Expire
 
-Transaction Requery: GET https://sandbox.nomba.com/v1/transactions/requery/{sessionId}
+```
+DELETE /accounts/virtual/{identifier}
+```
 
-Checkout Link Generation: POST https://sandbox.nomba.com/v1/checkout/order
+Sub-account Balance
 
-Headers: Authorization: Bearer <token>, Content-Type: application/json, accountId: <your_account_id>
-Body: Includes order object with amount, currency (NGN), callbackUrl, customerEmail, orderReference, and optional orderMetaData.
-The checkoutLink is extracted from data["data"]["checkoutLink"] in the response.
+```
+GET /accounts/{subAccountId}/balance
+```
 
-Checkout Status: GET https://sandbox.nomba.com/v1/checkout/order/{orderReference}
+Transaction Reconciliation
 
+```
+GET /transactions/accounts/{subAccountId}
+```
 
-Mock/Fallback Mode
+Transaction Requery
 
-To ensure resilience and allow development despite potential API issues (e.g., 403 errors with shared hackathon credentials), nomba_api.py includes a mock fallback mode. If the Nomba API returns a 403 error, any other requests.exceptions.RequestException, or fails to return a valid token, checkout link, virtual account, balance, or transaction list, the system gracefully switches to mock mode. In this mode, placeholder checkout links, deterministic mock virtual account numbers, empty mock transaction lists, and zero-balance mock responses are generated, and a warning is printed to the console.
+```
+GET /transactions/requery/{sessionId}
+```
 
+Checkout Link Generation
 
-Architecture Note
+```
+POST /checkout/order
+```
 
-RecurPay follows the hackathon-recommended hierarchy:
+Headers:
 
-One Nomba Hackathon parent account -> one team sub-account -> many customer virtual accounts.
+* `Authorization: Bearer <access_token>`
+* `Content-Type: application/json`
+* `accountId: <your_parent_account_id>`
 
-Each customer's RecurPay customer ID is used as accountRef. When Nomba sends a webhook or returns account transactions, RecurPay can match the accountRef back to the customer and record the payment against that customer's recurring subscription.
+The request includes:
 
+* amount
+* currency (NGN)
+* callbackUrl
+* customerEmail
+* orderReference
+* optional orderMetaData
 
-HTML Dashboard (dashboard.html)
+The checkout URL is extracted from:
 
-The dashboard.html file provides a simple, standalone web interface to visualize the RecurPay data. It features:
+```text
+data["data"]["checkoutLink"]
+```
 
+Checkout Status
 
+```
+GET /checkout/order/{orderReference}
+```
 
-Clean, Modern Design: A responsive layout suitable for mobile devices (e.g., Termux users).
+---
 
-Customer List: Displays all registered customers and their assigned virtual account details when available.
+# Mock / Fallback Mode
 
-Upcoming & Overdue Payments: Highlights payments that are due soon or are already overdue (in red).
+To ensure the application remains usable when the Nomba Sandbox API is unavailable, RecurPay automatically switches to mock mode whenever authentication fails, a request returns HTTP 403, another request exception occurs, or required API data cannot be retrieved.
 
-Payment History: Shows a record of paid subscriptions.
+Mock mode generates:
 
-Data Loading: Loads data directly from the data.json file using JavaScript. To update the dashboard, simply run the CLI application to modify data.json and then refresh the dashboard.html page in a browser.
+* Placeholder checkout links
+* Deterministic virtual account numbers
+* Empty transaction lists
+* Zero-balance responses
 
+A warning is displayed so the user knows the application is running without live API responses.
 
-How to Run
+---
 
+# Architecture
 
-Navigate to the project directory:
-cd /home/ubuntu/recurpay
+The application follows the recommended hackathon hierarchy:
 
-Install dependencies:
-pip3 install -r requirements.txt
+```
+Parent Account
+    │
+    └── Team Sub-account
+            │
+            ├── Customer Virtual Account
+            ├── Customer Virtual Account
+            └── Customer Virtual Account
+```
 
-Run the CLI application:
-python3 recurpay.py
+Each customer's RecurPay customer ID is used as the Nomba `accountRef`. Incoming transactions or webhook events can therefore be matched directly to the correct customer and subscription.
 
-View the Dashboard: Open dashboard.html in any web browser. To see updated data, ensure you've run the CLI to modify data.json and then refresh the browser page.
+---
 
+# HTML Dashboard
 
-Important Notes
+The standalone dashboard provides a simple interface for viewing application data.
 
+Features include:
 
-Termux Compatibility: The project is designed to be lightweight and runnable on Termux, using only standard Python libraries (requests, json, datetime, os) and rich for CLI aesthetics.
+* Responsive layout
+* Customer list
+* Virtual account information
+* Upcoming payments
+* Overdue payments
+* Payment history
 
-Standalone HTML: The dashboard.html is a self-contained file, making it easy to open and view without needing a web server.
+The dashboard reads data from the local `data.json` file. After making changes through the CLI, refresh the page to display the latest information.
 
-Hackathon Ready: This MVP provides core functionalities and a clear demonstration of Nomba API integration (with fallback), fulfilling the hackathon requirements.
+---
+
+# Environment Variables
+
+Copy the example environment file before running the project.
+
+```bash
+cp .env.example .env
+```
+
+Configure the following variables in your local `.env` file:
+
+* `NOMBA_ACCOUNT_ID`
+* `NOMBA_SUB_ACCOUNT_ID`
+* `NOMBA_CLIENT_ID`
+* `NOMBA_CLIENT_SECRET`
+* `NOMBA_BASE_URL`
+
+The `.env` file contains sensitive credentials and should never be committed to version control.
+
+---
+
+# Data Storage
+
+Runtime customer and subscription data is stored locally in `data.json`.
+
+A `data.example.json` template is included in the repository so new users can initialize the project without exposing local data or generated checkout links.
+
+---
+
+# How to Run
+
+Clone the repository.
+
+Install the required dependencies.
+
+```bash
+pip install -r requirements.txt
+```
+
+Create a local environment file.
+
+```bash
+cp .env.example .env
+```
+
+Update `.env` with your Nomba Sandbox credentials.
+
+Run the CLI.
+
+```bash
+python recurpay.py
+```
+
+Open `dashboard.html` in any web browser to view the dashboard.
+
+---
+
+# Notes
+
+* Designed to run on standard Python environments and Termux.
+* Uses only lightweight dependencies, including `requests` and `rich`.
+* Includes automatic mock fallback mode for offline development and API failures.
+* Built for the DevCareer x Nomba Hackathon 2026.
 
 
 
