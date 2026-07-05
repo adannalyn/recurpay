@@ -67,6 +67,36 @@ def display_subscription_table(subscriptions, show_customer_name=True):
         table.add_row(*row)
     console.print(table)
 
+def resolve_customer(query):
+    """Resolve a customer by full ID, ID prefix, name, or email.
+    Prints a helpful message and returns None on zero or multiple
+    matches (showing the candidates so the user can narrow down)."""
+    matches = storage.find_customers(query)
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        console.print(f"[red]No customer found matching '{query}'.[/red]")
+        return None
+    console.print(f"[yellow]Multiple customers match '{query}':[/yellow]")
+    display_customer_table(matches)
+    console.print("[yellow]Try again with a more specific name, email, or the ID prefix shown above.[/yellow]")
+    return None
+
+def resolve_subscription(query):
+    """Resolve a subscription by full ID, ID prefix, description text,
+    or the associated customer's name. Prints a helpful message and
+    returns None on zero or multiple matches."""
+    matches = storage.find_subscriptions(query)
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        console.print(f"[red]No subscription found matching '{query}'.[/red]")
+        return None
+    console.print(f"[yellow]Multiple subscriptions match '{query}':[/yellow]")
+    display_subscription_table(matches)
+    console.print("[yellow]Try again with a more specific description, customer name, or the ID prefix shown above.[/yellow]")
+    return None
+
 def add_customer():
     console.print("[bold blue]Add New Customer[/bold blue]")
     name = Prompt.ask("Enter customer name")
@@ -83,23 +113,25 @@ def list_customers():
     display_customer_table(customers)
 
 def edit_customer():
-    customer_id = Prompt.ask("Enter customer ID to edit")
-    customer = storage.get_customer(customer_id)
+    query = Prompt.ask("Enter customer name, email, or ID to edit")
+    customer = resolve_customer(query)
     if not customer:
-        console.print("[red]Customer not found.[/red]")
         return
     console.print(f"[bold blue]Editing Customer: {customer.name} ({customer.email})[/bold blue]")
     new_name = Prompt.ask(f"Enter new name (current: {customer.name})", default=customer.name)
     new_email = Prompt.ask(f"Enter new email (current: {customer.email})", default=customer.email)
-    if storage.update_customer(customer_id, new_name, new_email):
+    if storage.update_customer(customer.customer_id, new_name, new_email):
         console.print("[green]Customer updated successfully.[/green]")
     else:
         console.print("[red]Failed to update customer.[/red]")
 
 def delete_customer():
-    customer_id = Prompt.ask("Enter customer ID to delete")
-    if Confirm.ask(f"[red]Are you sure you want to delete customer {customer_id} and all their subscriptions?[/red]"):
-        if storage.delete_customer(customer_id):
+    query = Prompt.ask("Enter customer name, email, or ID to delete")
+    customer = resolve_customer(query)
+    if not customer:
+        return
+    if Confirm.ask(f"[red]Are you sure you want to delete {customer.name} and all their subscriptions?[/red]"):
+        if storage.delete_customer(customer.customer_id):
             console.print("[green]Customer and associated subscriptions deleted.[/green]")
         else:
             console.print("[red]Customer not found.[/red]")
@@ -111,10 +143,9 @@ def add_subscription():
         console.print("[red]No customers available. Please add a customer first.[/red]")
         return
     display_customer_table(customers)
-    customer_id = Prompt.ask("Enter customer ID for this subscription")
-    customer = storage.get_customer(customer_id)
+    query = Prompt.ask("Enter customer name, email, or ID for this subscription")
+    customer = resolve_customer(query)
     if not customer:
-        console.print("[red]Customer not found.[/red]")
         return
 
     description = Prompt.ask("Enter subscription description")
@@ -124,7 +155,7 @@ def add_subscription():
     start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
 
     try:
-        subscription = Subscription(customer_id, amount, frequency, start_date, description)
+        subscription = Subscription(customer.customer_id, amount, frequency, start_date, description)
     except ValueError as error:
         console.print(f"[red]{error}[/red]")
         return
@@ -147,10 +178,9 @@ def create_customer_virtual_account():
         return
 
     display_customer_table(customers)
-    customer_id = Prompt.ask("Enter customer ID for the virtual account")
-    customer = storage.get_customer(customer_id)
+    query = Prompt.ask("Enter customer name, email, or ID for the virtual account")
+    customer = resolve_customer(query)
     if not customer:
-        console.print("[red]Customer not found.[/red]")
         return
 
     existing_account = customer.virtual_account or {}
@@ -171,7 +201,7 @@ def create_customer_virtual_account():
         console.print("[red]Failed to create virtual account.[/red]")
         return
 
-    storage.update_customer(customer_id, virtual_account=virtual_account)
+    storage.update_customer(customer.customer_id, virtual_account=virtual_account)
     bank_name = virtual_account.get("bankName", "Unknown bank")
     account_number = virtual_account.get("bankAccountNumber", "N/A")
     account_name = virtual_account.get("bankAccountName", virtual_account.get("accountName", customer.name))
@@ -182,6 +212,51 @@ def create_customer_virtual_account():
     console.print(f"Account Number: [bold]{account_number}[/bold]")
     console.print(f"Account Name: [bold]{account_name}[/bold]")
     console.print(f"Account Ref: [bold]{virtual_account.get('accountRef', customer.customer_id)}[/bold]")
+
+def expire_customer_virtual_account():
+    console.print("[bold blue]Expire / Delete Customer Virtual Account[/bold blue]")
+    customers = [c for c in storage.list_customers() if (c.virtual_account or {}).get("bankAccountNumber")]
+    if not customers:
+        console.print("[yellow]No customers currently have a virtual account.[/yellow]")
+        return
+
+    display_customer_table(customers)
+    query = Prompt.ask("Enter customer name, email, or ID whose virtual account should be removed")
+    customer = resolve_customer(query)
+    if not customer:
+        return
+
+    virtual_account = customer.virtual_account or {}
+    account_number = virtual_account.get("bankAccountNumber")
+    if not account_number:
+        console.print(f"[yellow]{customer.name} does not have a virtual account to remove.[/yellow]")
+        return
+
+    if not Confirm.ask(
+        f"[red]Remove the virtual account for {customer.name} ({account_number})? "
+        f"This cannot be undone.[/red]",
+        default=False
+    ):
+        return
+
+    identifier = virtual_account.get("accountRef", customer.customer_id)
+    was_mock = nomba_api.mock_mode
+    result = nomba_api.expire_virtual_account(identifier)
+
+    # The virtual account slot lives on the local customer record regardless
+    # of whether Nomba's servers confirm the expiry, so clear it either way -
+    # this mirrors how creation already treats local storage as authoritative
+    # for mock-mode accounts.
+    storage.update_customer(customer.customer_id, virtual_account={})
+
+    if was_mock or nomba_api.mock_mode or (isinstance(result, dict) and result.get("mock")):
+        console.print(
+            f"[green]Removed the locally stored virtual account for {customer.name}.[/green] "
+            f"[dim](Nomba API is in mock mode, so nothing was expired on Nomba's servers - "
+            f"only the local record was cleared.)[/dim]"
+        )
+    else:
+        console.print(f"[green]Virtual account for {customer.name} expired via the Nomba API and removed locally.[/green]")
 
 def _records_from_payload(payload):
     if isinstance(payload, list):
@@ -232,14 +307,37 @@ def _customer_from_transaction(transaction):
 
     return None, account_ref or "N/A"
 
+def _local_virtual_accounts():
+    """Build a virtual-account list from customers' locally stored
+    virtual_account data. Used as a mock-mode fallback since the Nomba
+    mock list endpoint has no knowledge of accounts we generated and
+    saved locally (create and list are separate, unconnected mock paths)."""
+    accounts = []
+    for customer in storage.list_customers():
+        virtual_account = customer.virtual_account or {}
+        if virtual_account.get("bankAccountNumber"):
+            accounts.append(virtual_account)
+    return accounts
+
 def list_nomba_virtual_accounts():
     console.print("[bold blue]Nomba Virtual Accounts[/bold blue]")
     payload = nomba_api.list_virtual_accounts()
     accounts = _records_from_payload(payload)
+    showing_local_fallback = False
+
+    if not accounts and nomba_api.mock_mode:
+        accounts = _local_virtual_accounts()
+        showing_local_fallback = bool(accounts)
 
     if not accounts:
         console.print("[yellow]No virtual accounts returned yet.[/yellow]")
         return
+
+    if showing_local_fallback:
+        console.print(
+            "[dim]Nomba API is in mock mode with no server-side record of created accounts. "
+            "Showing virtual accounts stored locally instead.[/dim]"
+        )
 
     table = Table(title="Virtual Accounts")
     table.add_column("Account Ref", style="cyan")
@@ -310,10 +408,9 @@ def reconcile_nomba_transactions():
     console.print(table)
 
 def update_subscription_status():
-    subscription_id = Prompt.ask("Enter subscription ID to update status")
-    subscription = storage.get_subscription(subscription_id)
+    query = Prompt.ask("Enter subscription description, customer name, or ID to update")
+    subscription = resolve_subscription(query)
     if not subscription:
-        console.print("[red]Subscription not found.[/red]")
         return
 
     console.print(f"[bold blue]Updating Subscription: {subscription.description} (Current Status: {subscription.status})[/bold blue]")
@@ -326,16 +423,36 @@ def update_subscription_status():
         subscription.last_payment_date = datetime.datetime.now()
         subscription.update_next_due_date()
 
-    if storage.update_subscription(subscription_id, status=new_status, last_payment_date=subscription.last_payment_date, next_due_date=subscription.next_due_date):
+    if storage.update_subscription(subscription.subscription_id, status=new_status, last_payment_date=subscription.last_payment_date, next_due_date=subscription.next_due_date):
         console.print("[green]Subscription status updated successfully.[/green]")
     else:
         console.print("[red]Failed to update subscription status.[/red]")
 
-def generate_payment_link():
-    subscription_id = Prompt.ask("Enter subscription ID to generate payment link")
-    subscription = storage.get_subscription(subscription_id)
+def delete_subscription_flow():
+    query = Prompt.ask("Enter subscription description, customer name, or ID to delete")
+    subscription = resolve_subscription(query)
     if not subscription:
-        console.print("[red]Subscription not found.[/red]")
+        return
+
+    customer = storage.get_customer(subscription.customer_id)
+    customer_name = customer.name if customer else "Unknown customer"
+
+    if not Confirm.ask(
+        f"[red]Delete subscription '{subscription.description}' for {customer_name} "
+        f"({subscription.amount:.2f} {CURRENCY}, {subscription.frequency})? This cannot be undone.[/red]",
+        default=False
+    ):
+        return
+
+    if storage.delete_subscription(subscription.subscription_id):
+        console.print("[green]Subscription deleted.[/green]")
+    else:
+        console.print("[red]Failed to delete subscription.[/red]")
+
+def generate_payment_link():
+    query = Prompt.ask("Enter subscription description, customer name, or ID to generate a payment link for")
+    subscription = resolve_subscription(query)
+    if not subscription:
         return
 
     customer = storage.get_customer(subscription.customer_id)
@@ -352,7 +469,7 @@ def generate_payment_link():
     )
 
     if checkout_link:
-        storage.update_subscription(subscription_id, checkout_link=checkout_link)
+        storage.update_subscription(subscription.subscription_id, checkout_link=checkout_link)
         console.print(f"[green]Generated checkout link for {subscription.description}:[/green] {checkout_link}")
     else:
         console.print("[red]Failed to generate checkout link.[/red]")
@@ -426,9 +543,10 @@ def subscription_menu():
         console.print("1. Add Subscription")
         console.print("2. List Subscriptions")
         console.print("3. Update Subscription Status")
-        console.print("4. Back to Main Menu")
+        console.print("4. Delete Subscription")
+        console.print("5. Back to Main Menu")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5"])
 
         if choice == "1":
             add_subscription()
@@ -437,6 +555,8 @@ def subscription_menu():
         elif choice == "3":
             update_subscription_status()
         elif choice == "4":
+            delete_subscription_flow()
+        elif choice == "5":
             break
 
 def nomba_menu():
@@ -447,9 +567,10 @@ def nomba_menu():
         console.print("3. View Sub-account Balance")
         console.print("4. Reconcile Transactions")
         console.print("5. Generate Checkout Link")
-        console.print("6. Back to Main Menu")
+        console.print("6. Expire/Delete Customer Virtual Account")
+        console.print("7. Back to Main Menu")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6", "7"])
 
         if choice == "1":
             create_customer_virtual_account()
@@ -462,6 +583,8 @@ def nomba_menu():
         elif choice == "5":
             generate_payment_link()
         elif choice == "6":
+            expire_customer_virtual_account()
+        elif choice == "7":
             break
 
 if __name__ == "__main__":

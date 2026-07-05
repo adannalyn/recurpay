@@ -23,6 +23,20 @@ class NombaAPI:
         if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
             return self.access_token
 
+        missing = [
+            name for name, value in (
+                ("NOMBA_ACCOUNT_ID", self.account_id),
+                ("NOMBA_CLIENT_ID", self.client_id),
+                ("NOMBA_CLIENT_SECRET", self.client_secret),
+                ("NOMBA_BASE_URL", self.base_url),
+            ) if not value
+        ]
+        if missing:
+            print(f"[NombaAPI Error] Missing required config: {', '.join(missing)}. "
+                  f"Check your .env file. Switching to mock mode.")
+            self.mock_mode = True
+            return None
+
         auth_url = f"{self.base_url}/auth/token/issue"
         headers = {
             "Content-Type": "application/json",
@@ -36,9 +50,13 @@ class NombaAPI:
 
         try:
             response = requests.post(auth_url, headers=headers, json=payload)
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
             if response.status_code == 403:
-                print(f"[NombaAPI Warning] API returned 403 Forbidden. Switching to mock mode.")
+                desc = data.get("description") or data.get("message") or response.text[:200] or "No details returned by API."
+                print(f"[NombaAPI Warning] API returned 403 Forbidden: {desc} Switching to mock mode.")
                 self.mock_mode = True
                 return None
             if data.get("code") == "00" and "access_token" in data.get("data", {}):

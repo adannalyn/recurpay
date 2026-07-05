@@ -4,29 +4,31 @@ from datetime import datetime
 from config import DATA_FILE
 from models import Customer, Subscription
 
+# IDs from data.example.json's template. A real customer always gets a
+# randomly generated UUID, so these exact literal IDs can only ever be
+# leftover seed data from the old auto-copy behavior - never a genuine
+# customer who happens to share a name like "Jane Doe".
+_PLACEHOLDER_CUSTOMER_IDS = {"example-customer-id-1", "example-customer-id-2"}
+_PLACEHOLDER_SUBSCRIPTION_IDS = {"example-subscription-id-1"}
+
 class JSONStorage:
     def __init__(self, data_file=DATA_FILE):
         self.data_file = data_file
         self.data = self._load_data()
 
     def _load_data(self):
-        example_file = os.path.join(
-            os.path.dirname(self.data_file),
-            "data.example.json"
-    )
-
-        # Initialize data.json from the example file if it doesn't exist
+        # First run: start with a genuinely empty data file. data.example.json
+        # is kept purely as a reference template for the expected shape of
+        # the data - it is never copied into data.json, since doing so used
+        # to leave permanent placeholder customers (Jane Doe / John Doe) in
+        # real data with no clear way to tell they weren't real records.
         if not os.path.exists(self.data_file):
-            if os.path.exists(example_file):
-                with open(example_file, "r") as src, open(self.data_file, "w") as dst:
-                    dst.write(src.read())
-            else:
-                with open(self.data_file, "w") as f:
-                    json.dump(
-                        {"customers": [], "subscriptions": []},
-                        f,
-                        indent=4
-                    )
+            with open(self.data_file, "w") as f:
+                json.dump(
+                    {"customers": [], "subscriptions": []},
+                    f,
+                    indent=4
+                )
 
         try:
             with open(self.data_file, "r") as f:
@@ -41,13 +43,57 @@ class JSONStorage:
                 for s in data.get("subscriptions", [])
             ]
 
+            data = self._purge_placeholder_seed_data(data)
+
             return data
+
 
         except (json.JSONDecodeError, FileNotFoundError):
             return {
                 "customers": [],
                 "subscriptions": []
             }
+
+    def _purge_placeholder_seed_data(self, data):
+        """One-time cleanup: earlier versions of this app auto-copied
+        data.example.json into data.json on first run, permanently mixing
+        placeholder customers (Jane Doe / John Doe) into real data with no
+        way to tell them apart from genuine records. This strips out any
+        records still carrying those exact known placeholder IDs and saves
+        the cleaned result immediately, so it only needs to run once per
+        affected data.json - it's effectively a no-op after that."""
+        placeholder_customers = [
+            c for c in data["customers"] if c.customer_id in _PLACEHOLDER_CUSTOMER_IDS
+        ]
+        placeholder_subscriptions = [
+            s for s in data["subscriptions"]
+            if s.subscription_id in _PLACEHOLDER_SUBSCRIPTION_IDS
+            or s.customer_id in _PLACEHOLDER_CUSTOMER_IDS
+        ]
+
+        if not placeholder_customers and not placeholder_subscriptions:
+            return data
+
+        removed_customer_ids = {c.customer_id for c in placeholder_customers}
+        removed_subscription_ids = {s.subscription_id for s in placeholder_subscriptions}
+
+        data["customers"] = [
+            c for c in data["customers"] if c.customer_id not in removed_customer_ids
+        ]
+        data["subscriptions"] = [
+            s for s in data["subscriptions"] if s.subscription_id not in removed_subscription_ids
+        ]
+
+        print(
+            f"[RecurPay] Removed {len(placeholder_customers)} leftover example "
+            f"customer(s) and {len(placeholder_subscriptions)} example subscription(s) "
+            f"from {self.data_file} (one-time cleanup)."
+        )
+
+        self.data = data
+        self._save_data()
+
+        return data
 
     def _save_data(self):
         with open(self.data_file, "w") as f:
@@ -67,6 +113,29 @@ class JSONStorage:
             if customer.customer_id == customer_id:
                 return customer
         return None
+
+    def find_customers(self, query):
+        """Look up customers by full ID, ID prefix, name, or email
+        (case-insensitive substring). Returns a list so callers can
+        detect zero/one/many matches. Falls back through match types
+        in order of specificity: exact ID, ID prefix, then text search."""
+        query = (query or "").strip()
+        if not query:
+            return []
+
+        exact = [c for c in self.data["customers"] if c.customer_id == query]
+        if exact:
+            return exact
+
+        prefix = [c for c in self.data["customers"] if c.customer_id.startswith(query)]
+        if prefix:
+            return prefix
+
+        query_lower = query.lower()
+        return [
+            c for c in self.data["customers"]
+            if query_lower in c.name.lower() or query_lower in c.email.lower()
+        ]
 
     def update_customer(self, customer_id, new_name=None, new_email=None, **kwargs):
         for customer in self.data["customers"]:
@@ -102,6 +171,31 @@ class JSONStorage:
             if sub.subscription_id == subscription_id:
                 return sub
         return None
+
+    def find_subscriptions(self, query):
+        """Look up subscriptions by full ID, ID prefix, description text,
+        or the associated customer's name (case-insensitive substring).
+        Returns a list so callers can detect zero/one/many matches."""
+        query = (query or "").strip()
+        if not query:
+            return []
+
+        exact = [s for s in self.data["subscriptions"] if s.subscription_id == query]
+        if exact:
+            return exact
+
+        prefix = [s for s in self.data["subscriptions"] if s.subscription_id.startswith(query)]
+        if prefix:
+            return prefix
+
+        query_lower = query.lower()
+        matches = []
+        for s in self.data["subscriptions"]:
+            customer = self.get_customer(s.customer_id)
+            customer_name = customer.name.lower() if customer else ""
+            if query_lower in s.description.lower() or query_lower in customer_name:
+                matches.append(s)
+        return matches
 
     def update_subscription(self, subscription_id, **kwargs):
         for sub in self.data["subscriptions"]:

@@ -94,6 +94,48 @@
             border: 1px dashed #ccc;
             border-radius: 5px;
         }
+        .file-picker {
+            text-align: center;
+            padding: 30px 20px;
+            border: 2px dashed #b8d4c8;
+            border-radius: 8px;
+            background-color: #f0f9f4;
+            margin-bottom: 30px;
+        }
+        .file-picker p {
+            margin: 0 0 15px 0;
+            color: #34495e;
+        }
+        .file-picker input[type="file"] {
+            display: none;
+        }
+        .file-picker label {
+            display: inline-block;
+            padding: 10px 24px;
+            background-color: #27ae60;
+            color: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .file-picker label:hover {
+            background-color: #219150;
+        }
+        .file-picker.hidden {
+            display: none;
+        }
+        .file-status {
+            font-size: 0.85em;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+        .file-status.error {
+            color: #e74c3c;
+        }
+        .file-status.success {
+            color: #27ae60;
+        }
         .footer {
             text-align: center;
             margin-top: 50px;
@@ -115,6 +157,14 @@
     <div class="container">
         <h1>RecurPay Dashboard</h1>
         <p style="text-align: center; color: #7f8c8d;">Subscription Payment Tracker for Nigerian Small Business Owners</p>
+
+        <div id="file-picker" class="file-picker hidden">
+            <p>Your browser can't auto-load <code>data.json</code> when this page is opened directly as a file
+               (a browser security restriction, not a bug in the data itself). Select it manually below instead:</p>
+            <label for="data-file-input">Choose data.json</label>
+            <input type="file" id="data-file-input" accept=".json,application/json">
+            <div id="file-status" class="file-status"></div>
+        </div>
 
         <div class="section">
             <h2>Customers</h2>
@@ -153,23 +203,70 @@
 
         const DATA_FILE_PATH = './data.json'; // Relative path to your data file
 
+        function renderData(data) {
+            console.log('Loaded data:', data);
+            renderCustomers(data.customers || []);
+            renderPayments(data.subscriptions || [], data.customers || []);
+        }
+
+        function showFilePicker(message, isError) {
+            const picker = document.getElementById('file-picker');
+            const status = document.getElementById('file-status');
+            picker.classList.remove('hidden');
+            if (message) {
+                status.textContent = message;
+                status.className = 'file-status' + (isError ? ' error' : '');
+            }
+        }
+
         async function loadDashboardData() {
+            // fetch() only works here when the page is served over http(s)
+            // (e.g. via a local dev server). When opened directly as a file
+            // (file://), browsers block fetch() to local files as a CORS/
+            // security restriction - that's expected, not a data problem,
+            // so fall back to letting the user pick data.json manually.
             try {
                 const response = await fetch(DATA_FILE_PATH);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
-                console.log('Loaded data:', data);
-                renderCustomers(data.customers);
-                renderPayments(data.subscriptions, data.customers);
+                renderData(data);
             } catch (error) {
-                console.error('Could not load dashboard data:', error);
-                document.getElementById('customer-list').innerHTML = '<div class="no-data">Failed to load customer data. Ensure data.json exists and is accessible.</div>';
-                document.getElementById('upcoming-overdue-payments').innerHTML = '<div class="no-data">Failed to load payment data.</div>';
-                document.getElementById('payment-history').innerHTML = '<div class="no-data">Failed to load payment history.</div>';
+                console.warn('Auto-load via fetch failed (expected under file://):', error);
+                showFilePicker('Select your data.json file to load the dashboard.', false);
             }
         }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('file-status');
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    renderData(data);
+                    status.textContent = `Loaded "${file.name}" successfully.`;
+                    status.className = 'file-status success';
+                } catch (parseError) {
+                    console.error('Could not parse selected file:', parseError);
+                    status.textContent = 'That file could not be read as valid JSON. Make sure you selected data.json.';
+                    status.className = 'file-status error';
+                }
+            };
+
+            reader.onerror = () => {
+                status.textContent = 'Could not read the selected file.';
+                status.className = 'file-status error';
+            };
+
+            reader.readAsText(file);
+        }
+
+        document.getElementById('data-file-input').addEventListener('change', handleFileSelect);
 
         function renderCustomers(customers) {
             const customerListDiv = document.getElementById('customer-list');
