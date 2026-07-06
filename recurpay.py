@@ -8,7 +8,7 @@ from rich.text import Text
 from config import CURRENCY
 from models import Customer, Subscription
 from storage import JSONStorage
-from nomba_api import NombaAPI
+from nomba_api import NombaAPI, frequency_to_nomba_enum, generate_numeric_reference
 
 console = Console()
 storage = JSONStorage()
@@ -257,6 +257,123 @@ def expire_customer_virtual_account():
         )
     else:
         console.print(f"[green]Virtual account for {customer.name} expired via the Nomba API and removed locally.[/green]")
+
+def setup_direct_debit_mandate():
+    console.print("[bold blue]Set Up Direct Debit Mandate[/bold blue]")
+    console.print(
+        "[dim]This authorizes RecurPay to auto-charge a customer's bank account on a "
+        "fixed schedule, instead of waiting for them to click a payment link. The "
+        "customer must still complete a one-time bank authorization step before it's active.[/dim]"
+    )
+    query = Prompt.ask("Enter customer name, email, or ID to set up a mandate for")
+    customer = resolve_customer(query)
+    if not customer:
+        return
+
+    existing = customer.direct_debit_mandate or {}
+    if existing.get("mandateId"):
+        if not Confirm.ask(
+            f"[yellow]{customer.name} already has a mandate on file. Replace it?[/yellow]",
+            default=False
+        ):
+            return
+
+    account_number = Prompt.ask("Customer's bank account number")
+    bank_code = Prompt.ask("Customer's bank code (e.g. from Nomba's bank list)")
+    phone_number = Prompt.ask("Customer's phone number")
+    address = Prompt.ask("Customer's address", default="")
+    amount = float(Prompt.ask("Amount to auto-charge per cycle"))
+    frequency = Prompt.ask("Frequency (weekly, biweekly, monthly, quarterly, or yearly)")
+
+    try:
+        nomba_frequency = frequency_to_nomba_enum(frequency)
+    except ValueError as error:
+        console.print(f"[red]{error}[/red]")
+        return
+
+    start_date = datetime.datetime.now()
+    duration_months_str = Prompt.ask("How many months should this mandate run for?", default="12")
+    try:
+        duration_months = int(duration_months_str)
+    except ValueError:
+        console.print("[red]Duration must be a whole number of months.[/red]")
+        return
+    end_date = start_date + datetime.timedelta(days=30 * duration_months)
+
+    merchant_reference = generate_numeric_reference(customer.customer_id)
+    mandate = nomba_api.create_direct_debit_mandate(
+        customer_account_number=account_number,
+        bank_code=bank_code,
+        customer_name=customer.name,
+        customer_account_name=customer.name,
+        customer_email=customer.email,
+        customer_phone_number=phone_number,
+        amount=amount,
+        frequency=nomba_frequency,
+        start_date=start_date.strftime("%Y-%m-%dT%H:%M"),
+        end_date=end_date.strftime("%Y-%m-%dT%H:%M"),
+        merchant_reference=merchant_reference,
+        customer_address=address
+    )
+
+    if not mandate:
+        console.print("[red]Failed to create mandate.[/red]")
+        return
+
+    storage.update_customer(customer.customer_id, direct_debit_mandate=mandate)
+
+    mock_note = " [yellow](mock)[/yellow]" if mandate.get("mock") else ""
+    console.print(f"[green]Mandate created for {customer.name}.{mock_note}[/green]")
+    console.print(f"Mandate ID: [bold]{mandate.get('mandateId')}[/bold]")
+    if mandate.get("description"):
+        console.print(f"[yellow]Next step - relay this to the customer:[/yellow]\n{mandate['description']}")
+
+def charge_subscription_via_mandate():
+    query = Prompt.ask("Enter subscription description, customer name, or ID to charge")
+    subscription = resolve_subscription(query)
+    if not subscription:
+        return
+
+    customer = storage.get_customer(subscription.customer_id)
+    if not customer:
+        console.print("[red]Associated customer not found.[/red]")
+        return
+
+    mandate = customer.direct_debit_mandate or {}
+    mandate_id = mandate.get("mandateId")
+    if not mandate_id:
+        console.print(f"[red]{customer.name} has no direct debit mandate set up yet.[/red]")
+        return
+
+    if mandate.get("status") not in (None, "ACTIVE", "active"):
+        console.print(
+            f"[yellow]This mandate's status is '{mandate.get('status')}', not confirmed active. "
+            f"The charge may fail if the customer hasn't completed authorization yet.[/yellow]"
+        )
+
+    reference = generate_numeric_reference(subscription.subscription_id)
+    result = nomba_api.debit_mandate(mandate_id, subscription.amount, reference, subscription.description)
+
+    if not result:
+        console.print("[red]Failed to charge mandate.[/red]")
+        return
+
+    is_mock = nomba_api.mock_mode or (isinstance(result, dict) and result.get("mock"))
+    status = str(result.get("status", "")).lower()
+
+    if status in ("successful", "success"):
+        subscription.last_payment_date = datetime.datetime.now()
+        subscription.update_next_due_date()
+        storage.update_subscription(
+            subscription.subscription_id,
+            status="paid",
+            last_payment_date=subscription.last_payment_date,
+            next_due_date=subscription.next_due_date
+        )
+        mock_note = " [yellow](mock - not a real charge)[/yellow]" if is_mock else ""
+        console.print(f"[green]Charged {customer.name} {subscription.amount:.2f} {CURRENCY} and marked paid.{mock_note}[/green]")
+    else:
+        console.print(f"[red]Charge did not succeed. Status: {result.get('status', 'unknown')}[/red]")
 
 def _records_from_payload(payload):
     if isinstance(payload, list):
@@ -544,9 +661,10 @@ def subscription_menu():
         console.print("2. List Subscriptions")
         console.print("3. Update Subscription Status")
         console.print("4. Delete Subscription")
-        console.print("5. Back to Main Menu")
+        console.print("5. Charge Subscription (Direct Debit)")
+        console.print("6. Back to Main Menu")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6"])
 
         if choice == "1":
             add_subscription()
@@ -557,6 +675,8 @@ def subscription_menu():
         elif choice == "4":
             delete_subscription_flow()
         elif choice == "5":
+            charge_subscription_via_mandate()
+        elif choice == "6":
             break
 
 def nomba_menu():
@@ -568,9 +688,10 @@ def nomba_menu():
         console.print("4. Reconcile Transactions")
         console.print("5. Generate Checkout Link")
         console.print("6. Expire/Delete Customer Virtual Account")
-        console.print("7. Back to Main Menu")
+        console.print("7. Set Up Direct Debit Mandate")
+        console.print("8. Back to Main Menu")
 
-        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6", "7"])
+        choice = Prompt.ask("Enter your choice", choices=["1", "2", "3", "4", "5", "6", "7", "8"])
 
         if choice == "1":
             create_customer_virtual_account()
@@ -585,6 +706,8 @@ def nomba_menu():
         elif choice == "6":
             expire_customer_virtual_account()
         elif choice == "7":
+            setup_direct_debit_mandate()
+        elif choice == "8":
             break
 
 if __name__ == "__main__":

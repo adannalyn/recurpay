@@ -4,18 +4,20 @@ import calendar
 from datetime import datetime, timedelta
 
 class Customer:
-    def __init__(self, name, email, customer_id=None, virtual_account=None):
+    def __init__(self, name, email, customer_id=None, virtual_account=None, direct_debit_mandate=None):
         self.customer_id = customer_id or str(uuid.uuid4())
         self.name = name
         self.email = email
         self.virtual_account = virtual_account or {}
+        self.direct_debit_mandate = direct_debit_mandate or {}
 
     def to_dict(self):
         return {
             "customer_id": self.customer_id,
             "name": self.name,
             "email": self.email,
-            "virtual_account": self.virtual_account
+            "virtual_account": self.virtual_account,
+            "direct_debit_mandate": self.direct_debit_mandate
         }
 
     @classmethod
@@ -24,7 +26,8 @@ class Customer:
             data["name"],
             data["email"],
             data.get("customer_id"),
-            data.get("virtual_account")
+            data.get("virtual_account"),
+            data.get("direct_debit_mandate")
         )
 
 class Subscription:

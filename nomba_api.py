@@ -1,5 +1,6 @@
 import requests
 import hashlib
+import time
 from datetime import datetime, timedelta
 from config import NOMBA_ACCOUNT_ID, NOMBA_CLIENT_ID, NOMBA_CLIENT_SECRET, NOMBA_BASE_URL, NOMBA_CALLBACK_URL, DEBUG
 
@@ -7,6 +8,44 @@ try:
     from config import NOMBA_SUB_ACCOUNT_ID
 except ImportError:
     NOMBA_SUB_ACCOUNT_ID = None
+
+# Nomba's direct debit mandate API only accepts a fixed set of calendar
+# cycles - it has no daily option and no arbitrary day-count frequencies,
+# unlike RecurPay's own Subscription.frequency field (which also accepts
+# things like "90 days" or "custom:7"). This maps the subset of RecurPay
+# frequencies that have a clean Nomba equivalent; anything else (daily,
+# plain day-counts, custom day-counts) has no mandate equivalent and
+# should keep using checkout links instead.
+_NOMBA_FREQUENCY_MAP = {
+    "weekly": "WEEKLY", "week": "WEEKLY",
+    "biweekly": "EVERY_TWO_WEEKS", "fortnightly": "EVERY_TWO_WEEKS",
+    "monthly": "MONTHLY", "month": "MONTHLY",
+    "quarterly": "EVERY_THREE_MONTHS", "quarter": "EVERY_THREE_MONTHS",
+    "yearly": "EVERY_TWELVE_MONTHS", "annual": "EVERY_TWELVE_MONTHS",
+    "annually": "EVERY_TWELVE_MONTHS", "year": "EVERY_TWELVE_MONTHS",
+}
+
+
+def frequency_to_nomba_enum(frequency):
+    """Translate a RecurPay frequency string to Nomba's mandate frequency
+    enum. Raises ValueError for frequencies with no clean equivalent."""
+    key = frequency.strip().lower().replace("_", " ")
+    if key in _NOMBA_FREQUENCY_MAP:
+        return _NOMBA_FREQUENCY_MAP[key]
+    raise ValueError(
+        f"Frequency '{frequency}' isn't supported for direct debit mandates. "
+        "Nomba's mandate API only supports fixed cycles: weekly, biweekly, monthly, "
+        "quarterly, or yearly. Day-count frequencies like '90 days' or 'custom:7' "
+        "aren't supported for auto-charge - use a checkout link for those instead."
+    )
+
+
+def generate_numeric_reference(seed):
+    """Nomba requires merchantReference to be a numeric-only string, unique
+    per transaction - RecurPay's own IDs are UUIDs, so this derives a
+    numeric string from a seed plus the current time for uniqueness."""
+    digest = hashlib.sha256(f"{seed}-{time.time()}".encode("utf-8")).hexdigest()
+    return str(int(digest[:15], 16))[:15]
 
 class NombaAPI:
     def __init__(self):
@@ -205,6 +244,165 @@ class NombaAPI:
             f"expire virtual account {identifier}",
             fallback={"identifier": identifier, "expired": False, "mock": True}
         )
+
+    # --- Direct Debit Mandates -----------------------------------------
+    # Field names here follow Nomba's published OpenAPI schema for
+    # POST /v1/direct-debits, which uses a different response envelope
+    # (responseCode/responseMessage) than most other endpoints in this
+    # file (code/description). Get Mandate Status and Debit a Mandate
+    # aren't fully documented publicly at the time of writing, so their
+    # exact field names are a best-effort match to the same conventions -
+    # worth double-checking against a live response once auth is working.
+
+    def create_direct_debit_mandate(self, customer_account_number, bank_code, customer_name,
+                                     customer_account_name, customer_email, customer_phone_number,
+                                     amount, frequency, start_date, end_date, merchant_reference,
+                                     customer_address="", narration=""):
+        """Create a direct debit mandate. The customer must still complete
+        a one-time bank authorization step (Nomba returns instructions,
+        typically a small token payment) before the mandate can be used."""
+        if self.mock_mode:
+            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock mandate.")
+            return self._mock_mandate(merchant_reference, customer_phone_number)
+
+        token = self._get_access_token()
+        if not token:
+            self.mock_mode = True
+            print("[NombaAPI Warning] Could not get access token. Falling back to mock mandate.")
+            return self._mock_mandate(merchant_reference, customer_phone_number)
+
+        url = f"{self.base_url}/direct-debits"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "accountId": self.account_id
+        }
+        payload = {
+            "customerAccountNumber": customer_account_number,
+            "bankCode": bank_code,
+            "customerName": customer_name,
+            "customerAddress": customer_address,
+            "customerAccountName": customer_account_name,
+            "amount": float(amount),
+            "frequency": frequency,
+            "narration": narration or f"RecurPay mandate {merchant_reference}",
+            "customerPhoneNumber": customer_phone_number,
+            "merchantReference": merchant_reference,
+            "startDate": start_date,
+            "endDate": end_date,
+            "customerEmail": customer_email,
+            "startImmediately": True
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            if response.status_code == 403:
+                desc = data.get("description") or data.get("responseMessage") or response.text[:200] or "No details returned."
+                print(f"[NombaAPI Warning] API returned 403 Forbidden: {desc} Switching to mock mode.")
+                self.mock_mode = True
+                return self._mock_mandate(merchant_reference, customer_phone_number)
+
+            if data.get("responseCode") == "00" and isinstance(data.get("data"), dict):
+                if DEBUG: print(f"[NombaAPI] Mandate created: {data['data'].get('mandateId')}")
+                return data["data"]
+
+            desc = data.get("responseMessage") or data.get("description", "Unknown error")
+            print(f"[NombaAPI Error] Failed to create mandate: {desc}")
+            self.mock_mode = True
+            return self._mock_mandate(merchant_reference, customer_phone_number)
+        except requests.exceptions.RequestException as e:
+            print(f"[NombaAPI Error] Network or API error during mandate creation: {e}")
+            self.mock_mode = True
+            return self._mock_mandate(merchant_reference, customer_phone_number)
+
+    def get_mandate_status(self, mandate_id):
+        return self._send_authenticated_request(
+            "get",
+            f"/direct-debits/{mandate_id}",
+            f"fetch mandate status for {mandate_id}",
+            fallback={"mandateId": mandate_id, "status": "ACTIVE", "mock": True}
+        )
+
+    def debit_mandate(self, mandate_id, amount, reference, narration=""):
+        """Charge a customer using an already-activated mandate."""
+        if self.mock_mode:
+            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock debit result.")
+            return self._mock_debit(mandate_id, amount, reference)
+
+        token = self._get_access_token()
+        if not token:
+            self.mock_mode = True
+            print("[NombaAPI Warning] Could not get access token. Falling back to mock debit.")
+            return self._mock_debit(mandate_id, amount, reference)
+
+        url = f"{self.base_url}/direct-debits/debit-mandate"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "accountId": self.account_id
+        }
+        payload = {
+            "mandateId": mandate_id,
+            "amount": float(amount),
+            "merchantReference": reference,
+            "narration": narration or f"RecurPay charge {reference}"
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=payload)
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
+            if response.status_code == 403:
+                desc = data.get("description") or data.get("responseMessage") or response.text[:200] or "No details returned."
+                print(f"[NombaAPI Warning] API returned 403 Forbidden: {desc} Switching to mock mode.")
+                self.mock_mode = True
+                return self._mock_debit(mandate_id, amount, reference)
+
+            success_code = data.get("responseCode") == "00" or data.get("code") == "00"
+            if success_code and isinstance(data.get("data"), dict):
+                if DEBUG: print(f"[NombaAPI] Mandate {mandate_id} debited successfully.")
+                return data["data"]
+
+            desc = data.get("responseMessage") or data.get("description", "Unknown error")
+            print(f"[NombaAPI Error] Failed to debit mandate {mandate_id}: {desc}")
+            self.mock_mode = True
+            return self._mock_debit(mandate_id, amount, reference)
+        except requests.exceptions.RequestException as e:
+            print(f"[NombaAPI Error] Network or API error while debiting mandate {mandate_id}: {e}")
+            self.mock_mode = True
+            return self._mock_debit(mandate_id, amount, reference)
+
+    def _mock_mandate(self, merchant_reference, phone_number):
+        digest = hashlib.sha256(str(merchant_reference).encode("utf-8")).hexdigest()
+        mandate_id = f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:32]}"
+        return {
+            "mandateId": mandate_id,
+            "merchantReference": merchant_reference,
+            "phoneNumber": phone_number,
+            "description": (
+                "MOCK MANDATE - Nomba API is not authenticating right now. In a real "
+                "mandate, the customer would need to pay a small token amount into a "
+                "specific NIBSS account to authorize it. This mock mandate is treated "
+                "as immediately active for demo purposes."
+            ),
+            "status": "ACTIVE",
+            "mock": True
+        }
+
+    def _mock_debit(self, mandate_id, amount, reference):
+        return {
+            "mandateId": mandate_id,
+            "merchantReference": reference,
+            "amount": f"{float(amount):.2f}",
+            "status": "successful",
+            "mock": True
+        }
 
     def get_sub_account_balance(self):
         if not self.sub_account_id:

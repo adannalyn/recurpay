@@ -25,6 +25,9 @@
             text-align: center;
             margin-bottom: 25px;
         }
+        h2 {
+            margin-bottom: 15px;
+        }
         .section {
             margin-bottom: 40px;
             border-bottom: 1px solid #eee;
@@ -94,6 +97,23 @@
             border: 1px dashed #ccc;
             border-radius: 5px;
         }
+        .mode-banner {
+            text-align: center;
+            padding: 10px 16px;
+            border-radius: 6px;
+            margin-bottom: 25px;
+            font-size: 0.9em;
+        }
+        .mode-banner.live {
+            background-color: #eef8f1;
+            border: 1px solid #cdebd5;
+            color: #1e7e42;
+        }
+        .mode-banner.readonly {
+            background-color: #fef7ec;
+            border: 1px solid #f5deb3;
+            color: #92660a;
+        }
         .file-picker {
             text-align: center;
             padding: 30px 20px;
@@ -122,7 +142,7 @@
         .file-picker label:hover {
             background-color: #219150;
         }
-        .file-picker.hidden {
+        .file-picker.hidden, .hidden {
             display: none;
         }
         .file-status {
@@ -136,11 +156,126 @@
         .file-status.success {
             color: #27ae60;
         }
+        .form-panel {
+            background-color: #fafbfb;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 18px 20px;
+            margin-bottom: 20px;
+        }
+        .form-panel h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 1.05em;
+            color: #34495e;
+        }
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-row input, .form-row select {
+            flex: 1;
+            min-width: 140px;
+            padding: 8px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        .form-panel button {
+            padding: 8px 20px;
+            background-color: #2c7be5;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .form-panel button:hover {
+            background-color: #1a63c4;
+        }
+        .form-status {
+            font-size: 0.85em;
+            margin-top: 8px;
+        }
+        .form-status.error {
+            color: #e74c3c;
+        }
+        .form-status.success {
+            color: #27ae60;
+        }
+        .card-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 8px;
+        }
+        .card-actions button {
+            flex: 1;
+            padding: 6px 10px;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+        .btn-action {
+            background-color: #27ae60;
+            color: #fff;
+        }
+        .btn-action:hover {
+            background-color: #219150;
+        }
+        .btn-delete {
+            background-color: #e74c3c;
+            color: #fff;
+        }
+        .btn-delete:hover {
+            background-color: #c0392b;
+        }
         .footer {
             text-align: center;
             margin-top: 50px;
             font-size: 0.85em;
             color: #7f8c8d;
+        }
+        .mock-badge {
+            display: inline-block;
+            font-size: 0.75em;
+            font-weight: bold;
+            color: #92660a;
+            background-color: #fef3d9;
+            border: 1px solid #f5deb3;
+            border-radius: 4px;
+            padding: 2px 6px;
+            margin-left: 6px;
+        }
+        .balance-panel {
+            background-color: #fafbfb;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 18px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .balance-panel .balance-amount {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #2c7be5;
+        }
+        .balance-panel button {
+            padding: 8px 18px;
+            background-color: #2c7be5;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .balance-panel button:hover {
+            background-color: #1a63c4;
         }
         @media (max-width: 768px) {
             .data-grid {
@@ -150,6 +285,9 @@
                 margin: 10px auto;
                 padding: 20px;
             }
+            .form-row input, .form-row select {
+                min-width: 100%;
+            }
         }
     </style>
 </head>
@@ -157,6 +295,8 @@
     <div class="container">
         <h1>RecurPay Dashboard</h1>
         <p style="text-align: center; color: #7f8c8d;">Subscription Payment Tracker for Nigerian Small Business Owners</p>
+
+        <div id="mode-banner" class="mode-banner hidden"></div>
 
         <div id="file-picker" class="file-picker hidden">
             <p>Your browser can't auto-load <code>data.json</code> when this page is opened directly as a file
@@ -166,18 +306,57 @@
             <div id="file-status" class="file-status"></div>
         </div>
 
+        <div id="balance-panel" class="balance-panel hidden">
+            <span>Nomba Sub-account Balance:</span>
+            <span id="balance-amount" class="balance-amount">—</span>
+            <span id="balance-mock-badge" class="mock-badge hidden">MOCK</span>
+            <button id="refresh-balance-btn" type="button">Refresh Balance</button>
+            <span id="balance-status" class="form-status"></span>
+        </div>
+
         <div class="section">
             <h2>Customers</h2>
+
+            <div id="add-customer-panel" class="form-panel hidden">
+                <h3>Add Customer</h3>
+                <form id="add-customer-form">
+                    <div class="form-row">
+                        <input type="text" id="new-customer-name" placeholder="Customer name" required>
+                        <input type="email" id="new-customer-email" placeholder="Customer email" required>
+                        <button type="submit">Add Customer</button>
+                    </div>
+                    <div id="add-customer-status" class="form-status"></div>
+                </form>
+            </div>
+
             <div id="customer-list" class="data-grid">
-                <!-- Customer cards will be loaded here by JavaScript -->
                 <div class="no-data">No customer data available. Please run the CLI to add customers and subscriptions, then refresh this page.</div>
             </div>
         </div>
 
         <div class="section">
             <h2>Upcoming & Overdue Payments</h2>
+
+            <div id="add-subscription-panel" class="form-panel hidden">
+                <h3>Add Subscription</h3>
+                <form id="add-subscription-form">
+                    <div class="form-row">
+                        <select id="new-sub-customer" required>
+                            <option value="">Select a customer...</option>
+                        </select>
+                        <input type="text" id="new-sub-description" placeholder="Description" required>
+                    </div>
+                    <div class="form-row">
+                        <input type="number" id="new-sub-amount" placeholder="Amount (NGN)" step="0.01" min="0" required>
+                        <input type="text" id="new-sub-frequency" placeholder="Frequency (e.g. monthly, 90 days)" required>
+                        <input type="date" id="new-sub-start-date" title="Start date (defaults to today)">
+                        <button type="submit">Add Subscription</button>
+                    </div>
+                    <div id="add-subscription-status" class="form-status"></div>
+                </form>
+            </div>
+
             <div id="upcoming-overdue-payments" class="data-grid">
-                <!-- Upcoming/Overdue payment cards will be loaded here by JavaScript -->
                 <div class="no-data">No upcoming or overdue payments.</div>
             </div>
         </div>
@@ -185,28 +364,101 @@
         <div class="section">
             <h2>Payment History</h2>
             <div id="payment-history" class="data-grid">
-                <!-- Payment history cards will be loaded here by JavaScript -->
                 <div class="no-data">No payment history available.</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Direct Debit Mandates</h2>
+            <p style="text-align: center; color: #7f8c8d; font-size: 0.9em; margin-top: -10px;">
+                Set up recurring auto-charge for a customer's bank account. The customer must complete
+                a one-time bank authorization step before the mandate becomes active.
+            </p>
+
+            <div id="add-mandate-panel" class="form-panel hidden">
+                <h3>Set Up Mandate</h3>
+                <form id="add-mandate-form">
+                    <div class="form-row">
+                        <select id="new-mandate-customer" required>
+                            <option value="">Select a customer...</option>
+                        </select>
+                        <input type="text" id="new-mandate-account-number" placeholder="Customer's account number" required>
+                        <input type="text" id="new-mandate-bank-code" placeholder="Bank code (e.g. 058)" required>
+                    </div>
+                    <div class="form-row">
+                        <input type="text" id="new-mandate-phone" placeholder="Customer's phone number" required>
+                        <input type="text" id="new-mandate-address" placeholder="Customer's address (optional)">
+                    </div>
+                    <div class="form-row">
+                        <input type="number" id="new-mandate-amount" placeholder="Amount per cycle (NGN)" step="0.01" min="0" required>
+                        <select id="new-mandate-frequency" required>
+                            <option value="">Frequency...</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="biweekly">Every 2 weeks</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                        <input type="number" id="new-mandate-duration" placeholder="Duration (months)" value="12" min="1">
+                        <button type="submit">Set Up Mandate</button>
+                    </div>
+                    <div id="add-mandate-status" class="form-status"></div>
+                </form>
             </div>
         </div>
 
         <div class="footer">
             <p>&copy; 2026 RecurPay. Built for DevCareer x Nomba Hackathon.</p>
-            <p>To update data, use the RecurPay CLI application and refresh this page.</p>
+            <p id="footer-hint">To update data, use the RecurPay CLI application and refresh this page.</p>
         </div>
     </div>
 
     <script>
-        // This script will load data from data.json and populate the dashboard
-        // For hackathon submission, you might need to manually generate data.json
-        // by running the CLI, or implement a simple server to serve the JSON.
+        const DATA_FILE_PATH = './data.json';
+        let apiAvailable = false;
+        let currentData = { customers: [], subscriptions: [] };
+        let balanceLoadedOnce = false;
 
-        const DATA_FILE_PATH = './data.json'; // Relative path to your data file
+        function escapeHtml(value) {
+            const div = document.createElement('div');
+            div.textContent = value == null ? '' : String(value);
+            return div.innerHTML;
+        }
 
         function renderData(data) {
-            console.log('Loaded data:', data);
+            currentData = data;
             renderCustomers(data.customers || []);
             renderPayments(data.subscriptions || [], data.customers || []);
+            populateCustomerDropdown(data.customers || []);
+        }
+
+        function setModeBanner(mode) {
+            // mode: 'live' | 'readonly'
+            const banner = document.getElementById('mode-banner');
+            const addCustomerPanel = document.getElementById('add-customer-panel');
+            const addSubscriptionPanel = document.getElementById('add-subscription-panel');
+            const addMandatePanel = document.getElementById('add-mandate-panel');
+            const balancePanel = document.getElementById('balance-panel');
+            const footerHint = document.getElementById('footer-hint');
+
+            banner.classList.remove('hidden', 'live', 'readonly');
+            if (mode === 'live') {
+                banner.classList.add('live');
+                banner.textContent = 'Live mode - connected to dashboard_server.py. Changes here update data.json directly.';
+                addCustomerPanel.classList.remove('hidden');
+                addSubscriptionPanel.classList.remove('hidden');
+                addMandatePanel.classList.remove('hidden');
+                balancePanel.classList.remove('hidden');
+                footerHint.textContent = 'Changes made here are saved immediately - no need to refresh manually after an edit.';
+            } else {
+                banner.classList.add('readonly');
+                banner.textContent = 'Read-only mode. Run "python3 dashboard_server.py" and open http://localhost:8000/dashboard.html to add or edit records here.';
+                addCustomerPanel.classList.add('hidden');
+                addSubscriptionPanel.classList.add('hidden');
+                addMandatePanel.classList.add('hidden');
+                balancePanel.classList.add('hidden');
+                footerHint.textContent = 'To update data, use the RecurPay CLI, or run dashboard_server.py for full editing here.';
+            }
         }
 
         function showFilePicker(message, isError) {
@@ -219,21 +471,48 @@
             }
         }
 
+        function hideFilePicker() {
+            document.getElementById('file-picker').classList.add('hidden');
+        }
+
         async function loadDashboardData() {
-            // fetch() only works here when the page is served over http(s)
-            // (e.g. via a local dev server). When opened directly as a file
-            // (file://), browsers block fetch() to local files as a CORS/
-            // security restriction - that's expected, not a data problem,
-            // so fall back to letting the user pick data.json manually.
+            // 1. Try the live API first - only succeeds when dashboard_server.py
+            //    is running, and gives full read/write capability.
+            try {
+                const response = await fetch('/api/data');
+                if (response.ok) {
+                    const data = await response.json();
+                    apiAvailable = true;
+                    hideFilePicker();
+                    setModeBanner('live');
+                    renderData(data);
+                    if (!balanceLoadedOnce) {
+                        balanceLoadedOnce = true;
+                        refreshBalance();
+                    }
+                    return;
+                }
+            } catch (error) {
+                // Server not running, or page opened via file:// - fall through.
+            }
+
+            // 2. Fall back to a plain static fetch of data.json - works if this
+            //    page happens to be served by some other http server, just
+            //    without write support.
+            apiAvailable = false;
             try {
                 const response = await fetch(DATA_FILE_PATH);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
+                hideFilePicker();
+                setModeBanner('readonly');
                 renderData(data);
             } catch (error) {
-                console.warn('Auto-load via fetch failed (expected under file://):', error);
+                // 3. Truly static file:// context - offer manual file selection.
+                console.warn('Auto-load failed (expected under file://):', error);
+                setModeBanner('readonly');
                 showFilePicker('Select your data.json file to load the dashboard.', false);
             }
         }
@@ -270,32 +549,69 @@
 
         function renderCustomers(customers) {
             const customerListDiv = document.getElementById('customer-list');
-            customerListDiv.innerHTML = ''; // Clear existing content
+            customerListDiv.innerHTML = '';
 
             if (customers && customers.length > 0) {
                 customers.forEach(customer => {
                     const virtualAccount = customer.virtual_account || {};
                     const virtualAccountDetails = virtualAccount.bankAccountNumber ? `
                         <div class="virtual-account">
-                            <p><strong>Bank:</strong> ${virtualAccount.bankName || 'N/A'}</p>
-                            <p><strong>Account No:</strong> ${virtualAccount.bankAccountNumber}</p>
-                            <p><strong>Account Name:</strong> ${virtualAccount.bankAccountName || virtualAccount.accountName || customer.name}</p>
-                            <p><strong>Account Ref:</strong> ${virtualAccount.accountRef || customer.customer_id}</p>
+                            <p><strong>Bank:</strong> ${escapeHtml(virtualAccount.bankName || 'N/A')}${virtualAccount.mock ? '<span class="mock-badge">MOCK</span>' : ''}</p>
+                            <p><strong>Account No:</strong> ${escapeHtml(virtualAccount.bankAccountNumber)}</p>
+                            <p><strong>Account Name:</strong> ${escapeHtml(virtualAccount.bankAccountName || virtualAccount.accountName || customer.name)}</p>
+                            <p><strong>Account Ref:</strong> ${escapeHtml(virtualAccount.accountRef || customer.customer_id)}</p>
                         </div>
                     ` : '<p><strong>Virtual Account:</strong> Not created</p>';
 
+                    const mandate = customer.direct_debit_mandate || {};
+                    const mandateDetails = mandate.mandateId ? `
+                        <div class="virtual-account">
+                            <p><strong>Direct Debit:</strong> ${escapeHtml(mandate.status || 'PENDING')}${mandate.mock ? '<span class="mock-badge">MOCK</span>' : ''}</p>
+                            <p><strong>Mandate ID:</strong> ${escapeHtml(String(mandate.mandateId).substring(0, 8))}...</p>
+                        </div>
+                    ` : '';
+
+                    const actions = apiAvailable ? `
+                        <div class="card-actions">
+                            ${virtualAccount.bankAccountNumber
+                                ? `<button class="btn-delete" onclick="removeVirtualAccount('${customer.customer_id}')">Remove VA</button>`
+                                : `<button class="btn-action" onclick="createVirtualAccount('${customer.customer_id}')">Create VA</button>`}
+                            <button class="btn-delete" onclick="deleteCustomer('${customer.customer_id}')">Delete</button>
+                        </div>
+                        ${mandate.mandateId ? `
+                        <div class="card-actions">
+                            <button class="btn-delete" onclick="clearMandate('${customer.customer_id}')">Clear Mandate</button>
+                        </div>
+                        ` : ''}
+                    ` : '';
+
                     const customerCard = `
                         <div class="card">
-                            <h3>${customer.name}</h3>
-                            <p><strong>Email:</strong> ${customer.email}</p>
-                            <p><strong>ID:</strong> ${customer.customer_id.substring(0, 8)}...</p>
+                            <h3>${escapeHtml(customer.name)}</h3>
+                            <p><strong>Email:</strong> ${escapeHtml(customer.email)}</p>
+                            <p><strong>ID:</strong> ${escapeHtml(customer.customer_id.substring(0, 8))}...</p>
                             ${virtualAccountDetails}
+                            ${mandateDetails}
+                            ${actions}
                         </div>
                     `;
                     customerListDiv.innerHTML += customerCard;
                 });
             } else {
                 customerListDiv.innerHTML = '<div class="no-data">No customer data available.</div>';
+            }
+        }
+
+        function populateCustomerDropdown(customers) {
+            const optionsHtml = '<option value="">Select a customer...</option>' +
+                customers.map(c => `<option value="${escapeHtml(c.customer_id)}">${escapeHtml(c.name)} (${escapeHtml(c.email)})</option>`).join('');
+
+            for (const selectId of ['new-sub-customer', 'new-mandate-customer']) {
+                const select = document.getElementById(selectId);
+                if (!select) continue;
+                const previousValue = select.value;
+                select.innerHTML = optionsHtml;
+                if (previousValue) select.value = previousValue;
             }
         }
 
@@ -306,13 +622,13 @@
             paymentHistoryDiv.innerHTML = '';
 
             const today = new Date();
-            today.setHours(0, 0, 0, 0); // Normalize today to start of day
+            today.setHours(0, 0, 0, 0);
 
             let hasUpcomingOverdue = false;
             let hasPaymentHistory = false;
 
             if (subscriptions && subscriptions.length > 0) {
-                subscriptions.sort((a, b) => new Date(a.next_due_date) - new Date(b.next_due_date));
+                subscriptions = [...subscriptions].sort((a, b) => new Date(a.next_due_date) - new Date(b.next_due_date));
 
                 subscriptions.forEach(sub => {
                     const customer = customers.find(c => c.customer_id === sub.customer_id);
@@ -331,28 +647,48 @@
                         statusClass = 'overdue';
                         statusText = 'Overdue';
                         hasUpcomingOverdue = true;
-                    } else if (nextDueDate >= today) {
+                    } else {
                         statusClass = 'pending';
                         statusText = 'Upcoming';
                         hasUpcomingOverdue = true;
                     }
 
+                    const hasMandate = !!(customer && customer.direct_debit_mandate && customer.direct_debit_mandate.mandateId);
+
+                    const actions = apiAvailable ? `
+                        <div class="card-actions">
+                            ${sub.status !== 'paid' ? `<button class="btn-action" onclick="markPaid('${sub.subscription_id}')">Mark Paid</button>` : ''}
+                            <button class="btn-delete" onclick="deleteSubscription('${sub.subscription_id}')">Delete</button>
+                        </div>
+                        <div class="card-actions">
+                            <button class="btn-action" onclick="generateCheckoutLink('${sub.subscription_id}')">
+                                ${sub.checkout_link ? 'Regenerate Checkout Link' : 'Generate Checkout Link'}
+                            </button>
+                        </div>
+                        ${hasMandate ? `
+                        <div class="card-actions">
+                            <button class="btn-action" onclick="chargeViaMandate('${sub.subscription_id}')">Charge via Direct Debit</button>
+                        </div>
+                        ` : ''}
+                    ` : '';
+
                     const paymentCard = `
                         <div class="card ${statusClass}">
-                            <h3>${sub.description}</h3>
-                            <p><strong>Customer:</strong> ${customerName}</p>
+                            <h3>${escapeHtml(sub.description)}</h3>
+                            <p><strong>Customer:</strong> ${escapeHtml(customerName)}</p>
                             <p><strong>Amount:</strong> ${parseFloat(sub.amount).toFixed(2)} NGN</p>
                             <p><strong>Due Date:</strong> ${new Date(sub.next_due_date).toLocaleDateString()}</p>
-                            <p><strong>Status:</strong> <span class="${statusClass}">${statusText.toUpperCase()}</span></p>
+                            <p><strong>Status:</strong> <span class="${statusClass}">${escapeHtml(statusText.toUpperCase())}</span></p>
                             ${virtualAccount.bankAccountNumber ? `
                                 <div class="virtual-account">
-                                    <p><strong>Pay Into:</strong> ${virtualAccount.bankName || 'N/A'}</p>
-                                    <p><strong>Account No:</strong> ${virtualAccount.bankAccountNumber}</p>
-                                    <p><strong>Account Name:</strong> ${virtualAccount.bankAccountName || virtualAccount.accountName || customerName}</p>
+                                    <p><strong>Pay Into:</strong> ${escapeHtml(virtualAccount.bankName || 'N/A')}</p>
+                                    <p><strong>Account No:</strong> ${escapeHtml(virtualAccount.bankAccountNumber)}</p>
+                                    <p><strong>Account Name:</strong> ${escapeHtml(virtualAccount.bankAccountName || virtualAccount.accountName || customerName)}</p>
                                 </div>
                             ` : ''}
-                            ${sub.checkout_link ? `<p><strong>Link:</strong> <a href="${sub.checkout_link}" target="_blank">Pay Now</a></p>` : ''}
+                            ${sub.checkout_link ? `<p><strong>Link:</strong> <a href="${escapeHtml(sub.checkout_link)}" target="_blank">Pay Now</a>${sub.checkout_link.startsWith('https://mock-checkout.nomba.com/') ? '<span class="mock-badge">MOCK</span>' : ''}</p>` : ''}
                             ${sub.last_payment_date ? `<p><strong>Last Paid:</strong> ${new Date(sub.last_payment_date).toLocaleDateString()}</p>` : ''}
+                            ${actions}
                         </div>
                     `;
 
@@ -372,7 +708,267 @@
             }
         }
 
-        // Load data when the page loads
+        // --- Write actions (only reachable when apiAvailable is true, since
+        // the buttons/forms that call these are hidden otherwise) ---
+
+        async function deleteCustomer(customerId) {
+            if (!confirm('Delete this customer and all their subscriptions? This cannot be undone.')) return;
+            try {
+                const res = await fetch(`/api/customers/${customerId}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to delete customer.');
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteSubscription(subscriptionId) {
+            if (!confirm('Delete this subscription? This cannot be undone.')) return;
+            try {
+                const res = await fetch(`/api/subscriptions/${subscriptionId}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to delete subscription.');
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function markPaid(subscriptionId) {
+            try {
+                const res = await fetch(`/api/subscriptions/${subscriptionId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'paid' })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to update subscription.');
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function createVirtualAccount(customerId) {
+            try {
+                const res = await fetch(`/api/customers/${customerId}/virtual-account`, { method: 'POST' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to create virtual account.');
+                if (result.mock) {
+                    alert('Virtual account created in MOCK mode - the Nomba API is not authenticating right now, so this account only exists locally, not on Nomba\'s servers.');
+                }
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function removeVirtualAccount(customerId) {
+            if (!confirm('Remove this virtual account? This cannot be undone.')) return;
+            try {
+                const res = await fetch(`/api/customers/${customerId}/virtual-account`, { method: 'DELETE' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to remove virtual account.');
+                if (result.mock) {
+                    alert('Nomba API is in mock mode, so nothing was expired on Nomba\'s servers - only the local record was cleared.');
+                }
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function generateCheckoutLink(subscriptionId) {
+            try {
+                const res = await fetch(`/api/subscriptions/${subscriptionId}/checkout-link`, { method: 'POST' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to generate checkout link.');
+                if (result.mock) {
+                    alert('Generated a MOCK checkout link - the Nomba API is not authenticating right now, so this link is a placeholder, not a real payment page.');
+                }
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function refreshBalance() {
+            const amountEl = document.getElementById('balance-amount');
+            const badgeEl = document.getElementById('balance-mock-badge');
+            const statusEl = document.getElementById('balance-status');
+            statusEl.textContent = 'Loading...';
+            statusEl.className = 'form-status';
+            try {
+                const res = await fetch('/api/nomba/balance');
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to fetch balance.');
+
+                const balance = result.balance || {};
+                const available = balance.availableBalance ?? balance.available_balance ?? 'N/A';
+                const currency = balance.currency || 'NGN';
+                amountEl.textContent = `${available} ${currency}`;
+                badgeEl.classList.toggle('hidden', !result.mock);
+                statusEl.textContent = result.mock
+                    ? 'Nomba API is in mock mode - this is a placeholder balance, not your real account balance.'
+                    : '';
+                statusEl.className = 'form-status';
+            } catch (e) {
+                statusEl.textContent = 'Error: ' + e.message;
+                statusEl.className = 'form-status error';
+            }
+        }
+
+        document.getElementById('refresh-balance-btn').addEventListener('click', refreshBalance);
+
+        document.getElementById('add-customer-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const name = document.getElementById('new-customer-name').value.trim();
+            const email = document.getElementById('new-customer-email').value.trim();
+            const statusEl = document.getElementById('add-customer-status');
+
+            try {
+                const res = await fetch('/api/customers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to add customer.');
+
+                statusEl.textContent = `Added ${name}.`;
+                statusEl.className = 'form-status success';
+                document.getElementById('new-customer-name').value = '';
+                document.getElementById('new-customer-email').value = '';
+                await loadDashboardData();
+            } catch (e) {
+                statusEl.textContent = e.message;
+                statusEl.className = 'form-status error';
+            }
+        });
+
+        document.getElementById('add-subscription-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const customerId = document.getElementById('new-sub-customer').value;
+            const description = document.getElementById('new-sub-description').value.trim();
+            const amount = document.getElementById('new-sub-amount').value;
+            const frequency = document.getElementById('new-sub-frequency').value.trim();
+            const startDate = document.getElementById('new-sub-start-date').value;
+            const statusEl = document.getElementById('add-subscription-status');
+
+            if (!customerId) {
+                statusEl.textContent = 'Please select a customer.';
+                statusEl.className = 'form-status error';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/subscriptions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_id: customerId,
+                        description,
+                        amount,
+                        frequency,
+                        start_date: startDate || undefined
+                    })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to add subscription.');
+
+                statusEl.textContent = 'Subscription added.';
+                statusEl.className = 'form-status success';
+                document.getElementById('new-sub-description').value = '';
+                document.getElementById('new-sub-amount').value = '';
+                document.getElementById('new-sub-frequency').value = '';
+                document.getElementById('new-sub-start-date').value = '';
+                await loadDashboardData();
+            } catch (e) {
+                statusEl.textContent = e.message;
+                statusEl.className = 'form-status error';
+            }
+        });
+
+        document.getElementById('add-mandate-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const customerId = document.getElementById('new-mandate-customer').value;
+            const accountNumber = document.getElementById('new-mandate-account-number').value.trim();
+            const bankCode = document.getElementById('new-mandate-bank-code').value.trim();
+            const phone = document.getElementById('new-mandate-phone').value.trim();
+            const address = document.getElementById('new-mandate-address').value.trim();
+            const amount = document.getElementById('new-mandate-amount').value;
+            const frequency = document.getElementById('new-mandate-frequency').value;
+            const duration = document.getElementById('new-mandate-duration').value || 12;
+            const statusEl = document.getElementById('add-mandate-status');
+
+            if (!customerId || !frequency) {
+                statusEl.textContent = 'Please select a customer and a frequency.';
+                statusEl.className = 'form-status error';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/customers/${customerId}/mandate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        account_number: accountNumber,
+                        bank_code: bankCode,
+                        phone_number: phone,
+                        address,
+                        amount,
+                        frequency,
+                        duration_months: duration
+                    })
+                });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to set up mandate.');
+
+                statusEl.textContent = 'Mandate created.';
+                statusEl.className = 'form-status success';
+                if (result.mock) {
+                    alert('Mandate created in MOCK mode - the Nomba API is not authenticating right now, so this only exists locally. In a real mandate, the customer would need to complete a bank authorization step before it could be used.');
+                }
+                document.getElementById('new-mandate-account-number').value = '';
+                document.getElementById('new-mandate-bank-code').value = '';
+                document.getElementById('new-mandate-phone').value = '';
+                document.getElementById('new-mandate-address').value = '';
+                document.getElementById('new-mandate-amount').value = '';
+                document.getElementById('new-mandate-frequency').value = '';
+                await loadDashboardData();
+            } catch (e) {
+                statusEl.textContent = e.message;
+                statusEl.className = 'form-status error';
+            }
+        });
+
+        async function clearMandate(customerId) {
+            if (!confirm('Clear this mandate record? This only removes it from RecurPay - it does not cancel anything on Nomba\'s or the customer\'s side.')) return;
+            try {
+                const res = await fetch(`/api/customers/${customerId}/mandate`, { method: 'DELETE' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to clear mandate.');
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function chargeViaMandate(subscriptionId) {
+            try {
+                const res = await fetch(`/api/subscriptions/${subscriptionId}/charge`, { method: 'POST' });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.error || 'Failed to charge via mandate.');
+                if (result.mock) {
+                    alert('Charged in MOCK mode - the Nomba API is not authenticating right now, so no real money moved.');
+                }
+                await loadDashboardData();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
         window.onload = loadDashboardData;
     </script>
 </body>
