@@ -58,6 +58,19 @@ class NombaAPI:
         self.token_expiry = None
         self.mock_mode = False
 
+    # Common leftover-template patterns - if a credential still contains one
+    # of these, it's almost certainly a placeholder that was never replaced
+    # with a real value, not a genuine (if invalid) credential. Catching
+    # this here turns an hour of "why is this 403ing" into one clear line.
+    _PLACEHOLDER_PATTERNS = (
+        "your_", "your-", "changeme", "change_me", "xxxx", "placeholder",
+        "example", "<", ">", "insert_", "insert-", "todo", "replace_me",
+    )
+
+    def _looks_like_placeholder(self, value):
+        lowered = str(value).lower()
+        return any(pattern in lowered for pattern in self._PLACEHOLDER_PATTERNS)
+
     def _get_access_token(self):
         if self.access_token and self.token_expiry and datetime.now() < self.token_expiry:
             return self.access_token
@@ -72,6 +85,20 @@ class NombaAPI:
         ]
         if missing:
             print(f"[NombaAPI Error] Missing required config: {', '.join(missing)}. "
+                  f"Check your .env file. Switching to mock mode.")
+            self.mock_mode = True
+            return None
+
+        placeholder_looking = [
+            name for name, value in (
+                ("NOMBA_ACCOUNT_ID", self.account_id),
+                ("NOMBA_CLIENT_ID", self.client_id),
+                ("NOMBA_CLIENT_SECRET", self.client_secret),
+            ) if self._looks_like_placeholder(value)
+        ]
+        if placeholder_looking:
+            print(f"[NombaAPI Error] {', '.join(placeholder_looking)} still looks like a "
+                  f"placeholder value (e.g. 'your_actual_secret_here'), not a real credential. "
                   f"Check your .env file. Switching to mock mode.")
             self.mock_mode = True
             return None
@@ -116,10 +143,6 @@ class NombaAPI:
             return None
 
     def generate_checkout_link(self, amount, customer_email, order_reference, description=""): # Added description parameter
-        if self.mock_mode:
-            print("[NombaAPI Warning] Nomba API is in mock mode. Generating placeholder checkout link.")
-            return f"https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}"
-
         token = self._get_access_token()
         if not token:
             self.mock_mode = True
@@ -148,6 +171,7 @@ class NombaAPI:
             response.raise_for_status()
             data = response.json()
             if data.get("code") == "00" and "checkoutLink" in data.get("data", {}):
+                self.mock_mode = False
                 if DEBUG: print(f"[NombaAPI] Successfully generated checkout link for {order_reference}.")
                 return data["data"]["checkoutLink"]
             else:
@@ -173,10 +197,6 @@ class NombaAPI:
 
         if not self.sub_account_id:
             print("[NombaAPI Warning] No sub-account ID configured. Generating mock virtual account.")
-            return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
-
-        if self.mock_mode:
-            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock virtual account.")
             return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
 
         token = self._get_access_token()
@@ -208,6 +228,7 @@ class NombaAPI:
             response.raise_for_status()
             data = response.json()
             if data.get("code") == "00" and isinstance(data.get("data"), dict):
+                self.mock_mode = False
                 if DEBUG: print(f"[NombaAPI] Successfully created virtual account for {account_ref}.")
                 return data["data"]
 
@@ -245,6 +266,76 @@ class NombaAPI:
             fallback={"identifier": identifier, "expired": False, "mock": True}
         )
 
+    # --- Bank lookups -----------------------------------------------------
+    # These exist for one reason: nobody should ever have to already know
+    # that "058" means Guaranty Trust Bank. list_banks() gives real names to
+    # show in a dropdown; lookup_bank_account() confirms the account holder's
+    # actual name before anyone commits to a mandate, catching typos in the
+    # account number before they become a failed or misdirected charge.
+
+    def list_banks(self):
+        result = self._send_authenticated_request(
+            "get",
+            "/transfers/banks",
+            "fetch bank codes and names",
+            fallback=self._mock_bank_list()
+        )
+        if isinstance(result, dict) and "results" in result:
+            return result["results"]
+        if isinstance(result, list):
+            return result
+        return self._mock_bank_list()["results"]
+
+    def lookup_bank_account(self, account_number, bank_code):
+        """Confirm the account holder's name for a given account number and
+        bank, before using it in a mandate. Returns None-ish mock data if
+        the API is unavailable, clearly flagged as unverified."""
+        return self._send_authenticated_request(
+            "post",
+            "/transfers/bank/lookup",
+            f"look up account {account_number}",
+            payload={"accountNumber": account_number, "bankCode": bank_code},
+            fallback={
+                "accountNumber": account_number,
+                "accountName": "Unverified (Nomba API unavailable - double-check this account number with your customer)",
+                "mock": True
+            }
+        )
+
+    def _mock_bank_list(self):
+        # A short list of common Nigerian banks so the dropdown isn't empty
+        # even when the API is unreachable - clearly not exhaustive.
+        return {
+            "results": [
+                {"code": "044", "name": "Access Bank"},
+                {"code": "063", "name": "Access Bank (Diamond)"},
+                {"code": "050", "name": "Ecobank Nigeria"},
+                {"code": "070", "name": "Fidelity Bank"},
+                {"code": "011", "name": "First Bank of Nigeria"},
+                {"code": "214", "name": "First City Monument Bank"},
+                {"code": "058", "name": "Guaranty Trust Bank"},
+                {"code": "030", "name": "Heritage Bank"},
+                {"code": "301", "name": "Jaiz Bank"},
+                {"code": "082", "name": "Keystone Bank"},
+                {"code": "526", "name": "Parallex Bank"},
+                {"code": "076", "name": "Polaris Bank"},
+                {"code": "101", "name": "Providus Bank"},
+                {"code": "221", "name": "Stanbic IBTC Bank"},
+                {"code": "068", "name": "Standard Chartered Bank"},
+                {"code": "232", "name": "Sterling Bank"},
+                {"code": "100", "name": "Suntrust Bank"},
+                {"code": "032", "name": "Union Bank of Nigeria"},
+                {"code": "033", "name": "United Bank For Africa"},
+                {"code": "215", "name": "Unity Bank"},
+                {"code": "035", "name": "Wema Bank"},
+                {"code": "057", "name": "Zenith Bank"},
+                {"code": "999992", "name": "Opay"},
+                {"code": "999991", "name": "Palmpay"},
+                {"code": "090267", "name": "Kuda Bank"},
+            ],
+            "mock": True
+        }
+
     # --- Direct Debit Mandates -----------------------------------------
     # Field names here follow Nomba's published OpenAPI schema for
     # POST /v1/direct-debits, which uses a different response envelope
@@ -261,10 +352,6 @@ class NombaAPI:
         """Create a direct debit mandate. The customer must still complete
         a one-time bank authorization step (Nomba returns instructions,
         typically a small token payment) before the mandate can be used."""
-        if self.mock_mode:
-            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock mandate.")
-            return self._mock_mandate(merchant_reference, customer_phone_number)
-
         token = self._get_access_token()
         if not token:
             self.mock_mode = True
@@ -307,6 +394,7 @@ class NombaAPI:
                 return self._mock_mandate(merchant_reference, customer_phone_number)
 
             if data.get("responseCode") == "00" and isinstance(data.get("data"), dict):
+                self.mock_mode = False
                 if DEBUG: print(f"[NombaAPI] Mandate created: {data['data'].get('mandateId')}")
                 return data["data"]
 
@@ -329,10 +417,6 @@ class NombaAPI:
 
     def debit_mandate(self, mandate_id, amount, reference, narration=""):
         """Charge a customer using an already-activated mandate."""
-        if self.mock_mode:
-            print("[NombaAPI Warning] Nomba API is in mock mode. Generating mock debit result.")
-            return self._mock_debit(mandate_id, amount, reference)
-
         token = self._get_access_token()
         if not token:
             self.mock_mode = True
@@ -366,6 +450,7 @@ class NombaAPI:
 
             success_code = data.get("responseCode") == "00" or data.get("code") == "00"
             if success_code and isinstance(data.get("data"), dict):
+                self.mock_mode = False
                 if DEBUG: print(f"[NombaAPI] Mandate {mandate_id} debited successfully.")
                 return data["data"]
 
@@ -438,10 +523,6 @@ class NombaAPI:
         )
 
     def _send_authenticated_request(self, method, path, action, payload=None, params=None, fallback=None):
-        if self.mock_mode:
-            print(f"[NombaAPI Warning] Nomba API is in mock mode. Using mock response for {action}.")
-            return fallback
-
         token = self._get_access_token()
         if not token:
             self.mock_mode = True
@@ -461,6 +542,7 @@ class NombaAPI:
             response.raise_for_status()
             data = response.json()
             if data.get("code") == "00":
+                self.mock_mode = False
                 return data.get("data", data)
 
             desc = data.get("description", "Unknown error")
@@ -503,10 +585,13 @@ class NombaAPI:
         return virtual_account
 
     def _mock_balance(self):
+        # Field names confirmed against a real successful response:
+        # {"amount": ..., "currency": ..., "timeCreated": ...} - not the
+        # availableBalance/ledgerBalance shape originally guessed here.
         return {
-            "availableBalance": "0.00",
-            "ledgerBalance": "0.00",
+            "amount": "0.00",
             "currency": "NGN",
+            "timeCreated": None,
             "mock": True
         }
 

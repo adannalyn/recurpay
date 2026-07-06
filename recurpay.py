@@ -258,6 +258,29 @@ def expire_customer_virtual_account():
     else:
         console.print(f"[green]Virtual account for {customer.name} expired via the Nomba API and removed locally.[/green]")
 
+def resolve_bank(query):
+    """Let the user search banks by name instead of memorizing a numeric
+    code (e.g. typing 'gtbank' or 'access' instead of knowing it's '058')."""
+    banks = nomba_api.list_banks()
+    query_lower = query.strip().lower()
+    matches = [b for b in banks if query_lower in b.get("name", "").lower()]
+
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        console.print(f"[red]No bank found matching '{query}'.[/red]")
+        return None
+
+    table = Table(title="Matching Banks")
+    table.add_column("#", style="cyan")
+    table.add_column("Bank Name", style="magenta")
+    for i, bank in enumerate(matches, start=1):
+        table.add_row(str(i), bank.get("name", "Unknown"))
+    console.print(table)
+
+    choice = Prompt.ask("Enter the number of the correct bank", choices=[str(i) for i in range(1, len(matches) + 1)])
+    return matches[int(choice) - 1]
+
 def setup_direct_debit_mandate():
     console.print("[bold blue]Set Up Direct Debit Mandate[/bold blue]")
     console.print(
@@ -278,8 +301,28 @@ def setup_direct_debit_mandate():
         ):
             return
 
+    bank_query = Prompt.ask("Customer's bank name (e.g. 'gtbank', 'access', 'zenith' - type part of the name)")
+    bank = resolve_bank(bank_query)
+    if not bank:
+        return
+    bank_code = bank["code"]
+
     account_number = Prompt.ask("Customer's bank account number")
-    bank_code = Prompt.ask("Customer's bank code (e.g. from Nomba's bank list)")
+
+    console.print("[dim]Checking account name...[/dim]")
+    lookup = nomba_api.lookup_bank_account(account_number, bank_code)
+    account_name_on_file = lookup.get("accountName") if isinstance(lookup, dict) else None
+
+    if lookup and isinstance(lookup, dict) and lookup.get("mock"):
+        console.print(f"[yellow]{account_name_on_file}[/yellow]")
+    elif account_name_on_file:
+        console.print(f"[green]Account holder on file: {account_name_on_file}[/green]")
+        if not Confirm.ask(f"Does this match {customer.name}?", default=True):
+            console.print("[red]Cancelled - double-check the account number and bank before retrying.[/red]")
+            return
+    else:
+        console.print("[yellow]Could not verify the account name. Proceeding without confirmation.[/yellow]")
+
     phone_number = Prompt.ask("Customer's phone number")
     address = Prompt.ask("Customer's address", default="")
     amount = float(Prompt.ask("Amount to auto-charge per cycle"))
@@ -305,7 +348,7 @@ def setup_direct_debit_mandate():
         customer_account_number=account_number,
         bank_code=bank_code,
         customer_name=customer.name,
-        customer_account_name=customer.name,
+        customer_account_name=account_name_on_file or customer.name,
         customer_email=customer.email,
         customer_phone_number=phone_number,
         amount=amount,
@@ -450,10 +493,33 @@ def list_nomba_virtual_accounts():
         console.print("[yellow]No virtual accounts returned yet.[/yellow]")
         return
 
+    # The sandbox sub-account is shared across every team using it, so a raw
+    # "list all" call returns everyone's accounts, not just yours. Filter
+    # down to accounts whose accountRef matches a customer_id we actually
+    # created (accountRef was set to customer.customer_id when creating it).
+    known_customer_ids = {c.customer_id for c in storage.list_customers()}
+    total_returned = len(accounts)
+    accounts = [
+        a for a in accounts
+        if str(_nested_value(a, "accountRef", "accountReference", "account_ref")) in known_customer_ids
+    ] if not showing_local_fallback else accounts  # local fallback is already yours-only
+
+    if not accounts:
+        console.print(
+            f"[yellow]None of the {total_returned} accounts returned belong to your customers "
+            f"(this sandbox sub-account is shared - the rest belong to other teams).[/yellow]"
+        )
+        return
+
     if showing_local_fallback:
         console.print(
             "[dim]Nomba API is in mock mode with no server-side record of created accounts. "
             "Showing virtual accounts stored locally instead.[/dim]"
+        )
+    elif len(accounts) < total_returned:
+        console.print(
+            f"[dim]Showing {len(accounts)} of {total_returned} accounts returned - filtered to "
+            f"your customers only (this sandbox sub-account is shared with other hackathon teams).[/dim]"
         )
 
     table = Table(title="Virtual Accounts")
@@ -500,6 +566,31 @@ def reconcile_nomba_transactions():
         console.print("[yellow]No transactions returned yet. In production, webhooks should update payments as inflows arrive.[/yellow]")
         return
 
+    # As with virtual accounts, this sandbox sub-account is shared across
+    # every team, so the raw transaction feed includes everyone's inflows.
+    # Only show ones that match one of your own customers by default.
+    matched = []
+    unmatched_count = 0
+    for transaction in transactions:
+        customer, account_ref = _customer_from_transaction(transaction)
+        if customer:
+            matched.append((transaction, customer, account_ref))
+        else:
+            unmatched_count += 1
+
+    if not matched:
+        console.print(
+            f"[yellow]None of the {len(transactions)} transactions returned match your customers "
+            f"(this sandbox sub-account is shared - the rest belong to other teams).[/yellow]"
+        )
+        return
+
+    if unmatched_count:
+        console.print(
+            f"[dim]Hiding {unmatched_count} transaction(s) that don't match any of your customers "
+            f"(this sandbox sub-account is shared with other hackathon teams).[/dim]"
+        )
+
     table = Table(title="Transaction Reconciliation")
     table.add_column("Customer", style="magenta")
     table.add_column("Account Ref", style="cyan")
@@ -508,14 +599,13 @@ def reconcile_nomba_transactions():
     table.add_column("Session ID", style="blue")
     table.add_column("Date", style="white")
 
-    for transaction in transactions:
-        customer, account_ref = _customer_from_transaction(transaction)
+    for transaction, customer, account_ref in matched:
         amount = _nested_value(transaction, "amount", "transactionAmount", "paidAmount")
         status = _nested_value(transaction, "status", "transactionStatus", "paymentStatus")
         session_id = _nested_value(transaction, "sessionId", "sessionID", "session_id")
         date = _nested_value(transaction, "createdAt", "created_at", "paymentDate", "transactionDate")
         table.add_row(
-            customer.name if customer else "Unmatched",
+            customer.name,
             str(account_ref),
             str(amount or "N/A"),
             str(status or "N/A"),
