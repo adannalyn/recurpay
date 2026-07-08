@@ -58,6 +58,28 @@ class NombaAPI:
         self.token_expiry = None
         self.mock_mode = False
 
+    @staticmethod
+    def _extract_error_detail(exc):
+        """requests.exceptions.HTTPError (raised by raise_for_status()) carries
+        the original response on exc.response, but raise_for_status() itself
+        never reads the body - so without this, a 400/422/etc. with a helpful
+        explanation from Nomba gets replaced by a generic 'Bad Request for
+        url: ...' message and the actual reason is lost."""
+        response = getattr(exc, "response", None)
+        if response is None:
+            return str(exc)
+        try:
+            body = response.json()
+            detail = body.get("description") or body.get("responseMessage") or body.get("message")
+            if detail:
+                return f"{exc} - {detail}"
+        except ValueError:
+            pass
+        text = getattr(response, "text", "") or ""
+        if text:
+            return f"{exc} - {text[:300]}"
+        return str(exc)
+
     # Common leftover-template patterns - if a credential still contains one
     # of these, it's almost certainly a placeholder that was never replaced
     # with a real value, not a genuine (if invalid) credential. Catching
@@ -180,7 +202,7 @@ class NombaAPI:
                 self.mock_mode = True
                 return f"https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}"
         except requests.exceptions.RequestException as e:
-            print(f"[NombaAPI Error] Network or API error during checkout link generation for {order_reference}: {e}")
+            print(f"[NombaAPI Error] Network or API error during checkout link generation for {order_reference}: {self._extract_error_detail(e)}")
             self.mock_mode = True
             return f"https://mock-checkout.nomba.com/pay/{order_reference}?amount={amount}"
 
@@ -237,7 +259,7 @@ class NombaAPI:
             self.mock_mode = True
             return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
         except requests.exceptions.RequestException as e:
-            print(f"[NombaAPI Error] Network or API error during virtual account creation for {account_ref}: {e}")
+            print(f"[NombaAPI Error] Network or API error during virtual account creation for {account_ref}: {self._extract_error_detail(e)}")
             self.mock_mode = True
             return self._mock_virtual_account(account_ref, account_name, expected_amount, expiry_date)
 
@@ -550,7 +572,7 @@ class NombaAPI:
             self.mock_mode = True
             return fallback
         except requests.exceptions.RequestException as e:
-            print(f"[NombaAPI Error] Network or API error while trying to {action}: {e}")
+            print(f"[NombaAPI Error] Network or API error while trying to {action}: {self._extract_error_detail(e)}")
             self.mock_mode = True
             return fallback
 
